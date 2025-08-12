@@ -3,7 +3,7 @@
 
 <suite name="MinimalFrameworkSuite" 
        verbose="1" 
-       parallel="false" 
+       parallel="none" 
        thread-count="1">
 
     <!-- Minimal test suite for framework validation -->
@@ -12,7 +12,7 @@
     
     <test name="FrameworkValidation" 
           preserve-order="true" 
-          parallel="false">
+          parallel="none">
         
         <!-- No test classes defined - framework foundation validation only -->
         <classes>
