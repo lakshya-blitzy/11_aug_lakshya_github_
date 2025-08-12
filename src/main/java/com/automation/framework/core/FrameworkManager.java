@@ -723,9 +723,10 @@ public class FrameworkManager implements IFrameworkManager {
             
             // Initialize TestNG instance for test coordination
             TestNG testNG = new TestNG();
-            testNG.setParallel(configurationManager.getPropertyWithDefault("testng.parallel", "methods"));
-            testNG.setThreadPoolSize(Integer.parseInt(
-                configurationManager.getPropertyWithDefault("testng.thread.pool.size", "10")));
+            // Note: setParallel(String) was deprecated in TestNG 7.3.0 and removed in 7.4.0
+            // Parallel execution should be configured through XML suite configuration
+            testNG.setThreadCount(Integer.parseInt(
+                configurationManager.getPropertyWithDefault("testng.thread.count", "10")));
             testNGInstance.set(testNG);
             
             logger.debug("Execution infrastructure initialized successfully");
