@@ -1,9 +1,371 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd" >
-<suite name="AutomationFrameworkSuite" parallel="methods" thread-count="10">
-    <test name="Framework Tests">
-        <packages>
-            <package name="com.automation.framework.*"/>
-        </packages>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+
+<!-- 
+TestNG Suite Configuration for Java Automation Framework
+Enterprise-grade test execution orchestration with resource management and error handling
+
+Key Features:
+- Parallel execution with thread pool optimization
+- Resource management for browser sessions and API connections
+- Comprehensive error handling and retry mechanisms
+- Multi-environment support with parameter injection
+- Integrated reporting with Allure and HTML output
+- Graceful shutdown hooks for proper cleanup
+-->
+
+<suite name="AutomationFrameworkSuite" 
+       verbose="10" 
+       parallel="methods" 
+       thread-count="10"
+       data-provider-thread-count="50"
+       time-out="7200000"
+       preserve-order="true"
+       allow-return-values="true">
+
+    <!-- Suite-level parameters for environment configuration -->
+    <parameter name="browser" value="${browser:chrome}"/>
+    <parameter name="environment" value="${environment:dev}"/>
+    <parameter name="baseUrl" value="${baseUrl:https://api.dev.example.com}"/>
+    <parameter name="apiTimeout" value="${apiTimeout:2000}"/>
+    <parameter name="pageLoadTimeout" value="${pageLoadTimeout:3000}"/>
+    <parameter name="elementWaitTimeout" value="${elementWaitTimeout:10000}"/>
+    <parameter name="maxRetryAttempts" value="${maxRetryAttempts:3}"/>
+    <parameter name="threadPoolSize" value="${threadPoolSize:10}"/>
+    <parameter name="apiConnectionPoolSize" value="${apiConnectionPoolSize:50}"/>
+    <parameter name="reportDirectory" value="${reportDirectory:target/test-reports}"/>
+    <parameter name="screenshotDirectory" value="${screenshotDirectory:target/screenshots}"/>
+    <parameter name="enableHeadless" value="${enableHeadless:false}"/>
+    <parameter name="enableVideoRecording" value="${enableVideoRecording:false}"/>
+    <parameter name="logLevel" value="${logLevel:INFO}"/>
+
+    <!-- Test listener configuration for reporting and monitoring -->
+    <listeners>
+        <!-- Allure reporting integration -->
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+        
+        <!-- Custom framework listeners for monitoring and resource management -->
+        <listener class-name="com.automation.framework.listeners.TestExecutionListener"/>
+        <listener class-name="com.automation.framework.listeners.ResourceManagementListener"/>
+        <listener class-name="com.automation.framework.listeners.ErrorHandlingListener"/>
+        <listener class-name="com.automation.framework.listeners.PerformanceMonitorListener"/>
+        <listener class-name="com.automation.framework.listeners.ScreenshotListener"/>
+        
+        <!-- Retry analyzer for handling transient failures -->
+        <listener class-name="com.automation.framework.retry.RetryAnalyzerListener"/>
+        
+        <!-- Suite lifecycle listeners for setup and teardown -->
+        <listener class-name="com.automation.framework.listeners.SuiteLifecycleListener"/>
+    </listeners>
+
+    <!-- Global test groups definition -->
+    <groups>
+        <run>
+            <!-- Default groups to execute - can be overridden via Maven profiles -->
+            <include name="smoke"/>
+            <include name="regression"/>
+            <include name="integration"/>
+            <include name="e2e"/>
+        </run>
+        
+        <!-- Group dependencies for execution order -->
+        <dependencies>
+            <group name="integration" depends-on="smoke"/>
+            <group name="e2e" depends-on="integration"/>
+        </dependencies>
+    </groups>
+
+    <!-- Framework Core Initialization Tests -->
+    <test name="FrameworkCoreTests" 
+          preserve-order="true" 
+          parallel="false"
+          thread-count="1">
+        
+        <parameter name="moduleTimeout" value="5000"/>
+        
+        <groups>
+            <run>
+                <include name="framework-init"/>
+                <include name="configuration"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Framework initialization and configuration validation -->
+            <class name="com.automation.framework.core.FrameworkInitializationTest"/>
+            <class name="com.automation.framework.core.ConfigurationValidationTest"/>
+            <class name="com.automation.framework.core.ResourceManagerTest"/>
+            <class name="com.automation.framework.core.ShutdownHandlerTest"/>
+        </classes>
     </test>
+
+    <!-- Smoke Tests - Quick validation suite -->
+    <test name="SmokeTests" 
+          preserve-order="false" 
+          parallel="methods"
+          thread-count="5">
+        
+        <parameter name="testTimeout" value="30000"/>
+        
+        <groups>
+            <run>
+                <include name="smoke"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Core functionality smoke tests -->
+            <class name="com.automation.framework.web.smoke.BrowserManagerSmokeTest"/>
+            <class name="com.automation.framework.api.smoke.APIClientSmokeTest"/>
+            <class name="com.automation.framework.web.smoke.ElementInteractionSmokeTest"/>
+            <class name="com.automation.framework.api.smoke.AuthenticationSmokeTest"/>
+        </classes>
+    </test>
+
+    <!-- Web Automation Tests - Browser-based testing -->
+    <test name="WebAutomationTests" 
+          preserve-order="false" 
+          parallel="methods"
+          thread-count="8">
+        
+        <parameter name="browserPoolSize" value="8"/>
+        <parameter name="webDriverTimeout" value="3000"/>
+        
+        <groups>
+            <run>
+                <include name="web"/>
+                <include name="ui"/>
+                <include name="regression"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Browser management and automation -->
+            <class name="com.automation.framework.web.BrowserManagerTest"/>
+            <class name="com.automation.framework.web.ElementInteractionTest"/>
+            <class name="com.automation.framework.web.PageObjectFactoryTest"/>
+            <class name="com.automation.framework.web.WebDriverPoolTest"/>
+            
+            <!-- Cross-browser compatibility tests -->
+            <class name="com.automation.framework.web.crossbrowser.ChromeCompatibilityTest"/>
+            <class name="com.automation.framework.web.crossbrowser.FirefoxCompatibilityTest"/>
+            <class name="com.automation.framework.web.crossbrowser.EdgeCompatibilityTest"/>
+            
+            <!-- Dynamic content handling -->
+            <class name="com.automation.framework.web.dynamic.AjaxHandlingTest"/>
+            <class name="com.automation.framework.web.dynamic.DynamicElementTest"/>
+            <class name="com.automation.framework.web.dynamic.WaitStrategyTest"/>
+            
+            <!-- Page Object Model tests -->
+            <class name="com.automation.framework.web.pageobjects.PageFactoryTest"/>
+            <class name="com.automation.framework.web.pageobjects.ComponentLibraryTest"/>
+        </classes>
+    </test>
+
+    <!-- API Automation Tests - RESTful service testing -->
+    <test name="APIAutomationTests" 
+          preserve-order="false" 
+          parallel="methods"
+          thread-count="10">
+        
+        <parameter name="apiConnectionPoolSize" value="25"/>
+        <parameter name="apiResponseTimeout" value="2000"/>
+        
+        <groups>
+            <run>
+                <include name="api"/>
+                <include name="integration"/>
+                <include name="regression"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- API client and request handling -->
+            <class name="com.automation.framework.api.APIClientTest"/>
+            <class name="com.automation.framework.api.RequestValidatorTest"/>
+            <class name="com.automation.framework.api.ResponseValidatorTest"/>
+            <class name="com.automation.framework.api.ConnectionPoolManagerTest"/>
+            
+            <!-- Authentication and authorization -->
+            <class name="com.automation.framework.api.auth.AuthenticationManagerTest"/>
+            <class name="com.automation.framework.api.auth.OAuth2HandlerTest"/>
+            <class name="com.automation.framework.api.auth.JWTTokenManagerTest"/>
+            <class name="com.automation.framework.api.auth.BasicAuthHandlerTest"/>
+            
+            <!-- HTTP method testing -->
+            <class name="com.automation.framework.api.methods.GetRequestTest"/>
+            <class name="com.automation.framework.api.methods.PostRequestTest"/>
+            <class name="com.automation.framework.api.methods.PutRequestTest"/>
+            <class name="com.automation.framework.api.methods.DeleteRequestTest"/>
+            <class name="com.automation.framework.api.methods.PatchRequestTest"/>
+            
+            <!-- Schema validation and data binding -->
+            <class name="com.automation.framework.api.validation.JSONSchemaValidationTest"/>
+            <class name="com.automation.framework.api.validation.XMLSchemaValidationTest"/>
+            <class name="com.automation.framework.api.validation.DataBindingTest"/>
+        </classes>
+    </test>
+
+    <!-- Integration Tests - Cross-module functionality -->
+    <test name="IntegrationTests" 
+          preserve-order="true" 
+          parallel="classes"
+          thread-count="6">
+        
+        <parameter name="integrationTimeout" value="60000"/>
+        
+        <groups>
+            <run>
+                <include name="integration"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Framework integration tests -->
+            <class name="com.automation.framework.integration.WebAPIIntegrationTest"/>
+            <class name="com.automation.framework.integration.ResourceSharingTest"/>
+            <class name="com.automation.framework.integration.ErrorHandlingIntegrationTest"/>
+            <class name="com.automation.framework.integration.DataFlowIntegrationTest"/>
+            
+            <!-- External service integration -->
+            <class name="com.automation.framework.integration.external.DatabaseIntegrationTest"/>
+            <class name="com.automation.framework.integration.external.FileSystemIntegrationTest"/>
+            <class name="com.automation.framework.integration.external.NetworkIntegrationTest"/>
+        </classes>
+    </test>
+
+    <!-- End-to-End Tests - Complete workflow validation -->
+    <test name="EndToEndTests" 
+          preserve-order="true" 
+          parallel="classes"
+          thread-count="4">
+        
+        <parameter name="e2eTimeout" value="120000"/>
+        
+        <groups>
+            <run>
+                <include name="e2e"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Complete user journey tests -->
+            <class name="com.automation.framework.e2e.UserJourneyTest"/>
+            <class name="com.automation.framework.e2e.BusinessWorkflowTest"/>
+            <class name="com.automation.framework.e2e.DataConsistencyTest"/>
+            <class name="com.automation.framework.e2e.PerformanceE2ETest"/>
+        </classes>
+    </test>
+
+    <!-- Error Handling and Recovery Tests -->
+    <test name="ErrorHandlingTests" 
+          preserve-order="false" 
+          parallel="methods"
+          thread-count="5">
+        
+        <parameter name="errorTestTimeout" value="45000"/>
+        
+        <groups>
+            <run>
+                <include name="error-handling"/>
+                <include name="recovery"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Exception handling and recovery -->
+            <class name="com.automation.framework.exceptions.ExceptionHandlerTest"/>
+            <class name="com.automation.framework.exceptions.RetryMechanismTest"/>
+            <class name="com.automation.framework.exceptions.RecoveryStrategyTest"/>
+            <class name="com.automation.framework.exceptions.ErrorReporterTest"/>
+            
+            <!-- Resource cleanup validation -->
+            <class name="com.automation.framework.resources.ResourceCleanupTest"/>
+            <class name="com.automation.framework.resources.MemoryLeakDetectionTest"/>
+            <class name="com.automation.framework.resources.ConnectionLeakTest"/>
+        </classes>
+    </test>
+
+    <!-- Performance and Load Tests -->
+    <test name="PerformanceTests" 
+          preserve-order="false" 
+          parallel="methods"
+          thread-count="8">
+        
+        <parameter name="performanceTimeout" value="300000"/>
+        <parameter name="loadTestIterations" value="100"/>
+        
+        <groups>
+            <run>
+                <include name="performance"/>
+                <include name="load"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Performance benchmarking -->
+            <class name="com.automation.framework.performance.FrameworkPerformanceTest"/>
+            <class name="com.automation.framework.performance.BrowserPerformanceTest"/>
+            <class name="com.automation.framework.performance.APIPerformanceTest"/>
+            <class name="com.automation.framework.performance.ResourceUtilizationTest"/>
+            
+            <!-- Load and stress testing -->
+            <class name="com.automation.framework.performance.ConcurrentExecutionTest"/>
+            <class name="com.automation.framework.performance.StressTest"/>
+            <class name="com.automation.framework.performance.MemoryStressTest"/>
+        </classes>
+    </test>
+
+    <!-- Monitoring and Observability Tests -->
+    <test name="MonitoringTests" 
+          preserve-order="false" 
+          parallel="methods"
+          thread-count="3">
+        
+        <parameter name="monitoringTimeout" value="30000"/>
+        
+        <groups>
+            <run>
+                <include name="monitoring"/>
+                <include name="metrics"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Metrics and monitoring -->
+            <class name="com.automation.framework.monitoring.MetricsCollectorTest"/>
+            <class name="com.automation.framework.monitoring.HealthMonitorTest"/>
+            <class name="com.automation.framework.monitoring.AuditLoggerTest"/>
+            <class name="com.automation.framework.monitoring.ResourceMonitorTest"/>
+            
+            <!-- Observability features -->
+            <class name="com.automation.framework.observability.TracingTest"/>
+            <class name="com.automation.framework.observability.LoggingTest"/>
+            <class name="com.automation.framework.observability.AlertingTest"/>
+        </classes>
+    </test>
+
+    <!-- Validation Framework Tests -->
+    <test name="ValidationTests" 
+          preserve-order="false" 
+          parallel="methods"
+          thread-count="4">
+        
+        <parameter name="validationTimeout" value="15000"/>
+        
+        <groups>
+            <run>
+                <include name="validation"/>
+            </run>
+        </groups>
+        
+        <classes>
+            <!-- Input and data validation -->
+            <class name="com.automation.framework.validation.ConfigurationValidatorTest"/>
+            <class name="com.automation.framework.validation.TestDataValidatorTest"/>
+            <class name="com.automation.framework.validation.SchemaValidatorTest"/>
+            <class name="com.automation.framework.validation.StateValidatorTest"/>
+        </classes>
+    </test>
+
 </suite>
