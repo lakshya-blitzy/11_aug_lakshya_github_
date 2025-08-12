@@ -120,9 +120,9 @@ public class ResourceMonitor {
      */
     public ResourceMonitor() {
         // Initialize resource managers
-        this.memoryManager = new MemoryManager();
+        this.memoryManager = MemoryManager.getInstance();
         this.connectionPoolManager = new ConnectionPoolManager();
-        this.threadPoolManager = new ThreadPoolManager();
+        this.threadPoolManager = ThreadPoolManager.getInstance();
         this.webDriverPool = new WebDriverPool();
         this.configurationManager = ConfigurationManager.getInstance();
         
@@ -238,44 +238,58 @@ public class ResourceMonitor {
         try {
             List<ResourceLeak> allLeaks = new ArrayList<>();
             
-            // Collect memory leaks
-            var memoryLeaks = memoryManager.getMemoryLeaks();
-            memoryLeaks.forEach(leak -> {
-                allLeaks.add(new ResourceLeak(
-                    "MEMORY_LEAK",
-                    "memory-" + System.identityHashCode(leak),
-                    Instant.now(),
-                    calculateLeakageAmount(leak),
-                    getStackTrace(),
-                    "HIGH"
-                ));
-            });
+            // Collect memory leaks using raw types to avoid visibility issues
+            try {
+                @SuppressWarnings("unchecked")
+                List<Object> memoryLeaks = (List<Object>) (List<?>) memoryManager.getMemoryLeaks();
+                if (memoryLeaks != null) {
+                    memoryLeaks.forEach(leak -> {
+                        allLeaks.add(new ResourceLeak(
+                            "MEMORY_LEAK",
+                            "memory-" + System.identityHashCode(leak),
+                            Instant.now(),
+                            calculateLeakageAmount(leak),
+                            getStackTrace(),
+                            "HIGH"
+                        ));
+                    });
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to collect memory leaks", e);
+            }
             
-            // Collect connection leaks
-            var connectionLeaks = connectionPoolManager.getConnectionLeaks();
-            connectionLeaks.forEach(leak -> {
-                allLeaks.add(new ResourceLeak(
-                    "CONNECTION_LEAK",
-                    "connection-" + System.identityHashCode(leak),
-                    Instant.now(),
-                    calculateConnectionLeakAmount(leak),
-                    getStackTrace(),
-                    "MEDIUM"
-                ));
-            });
+            // Collect connection leaks using raw types to avoid visibility issues  
+            try {
+                @SuppressWarnings("unchecked")
+                List<Object> connectionLeaks = (List<Object>) (List<?>) connectionPoolManager.getConnectionLeaks();
+                if (connectionLeaks != null) {
+                    connectionLeaks.forEach(leak -> {
+                        allLeaks.add(new ResourceLeak(
+                            "CONNECTION_LEAK",
+                            "connection-" + System.identityHashCode(leak),
+                            Instant.now(),
+                            calculateConnectionLeakAmount(leak),
+                            getStackTrace(),
+                            "MEDIUM"
+                        ));
+                    });
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to collect connection leaks", e);
+            }
             
             // Collect thread leaks
-            var threadLeaks = threadPoolManager.getThreadLeaks();
-            threadLeaks.forEach(leak -> {
+            int threadLeakCount = threadPoolManager.getThreadLeaks();
+            if (threadLeakCount > 0) {
                 allLeaks.add(new ResourceLeak(
                     "THREAD_LEAK",
-                    "thread-" + System.identityHashCode(leak),
+                    "thread-pool-leaks",
                     Instant.now(),
-                    calculateThreadLeakAmount(leak),
+                    calculateThreadLeakAmount(threadLeakCount),
                     getStackTrace(),
                     "MEDIUM"
                 ));
-            });
+            }
             
             // Collect browser session leaks
             int sessionLeaks = webDriverPool.getSessionLeaks();
@@ -536,12 +550,13 @@ public class ResourceMonitor {
             System.gc();
             Thread.sleep(100); // Allow GC to complete
             
-            // Get memory leaks from MemoryManager
-            var memoryLeaks = memoryManager.getMemoryLeaks();
+            // Get memory leaks from MemoryManager using raw types
+            @SuppressWarnings("unchecked")
+            List<Object> memoryLeaks = (List<Object>) (List<?>) memoryManager.getMemoryLeaks();
             
             List<ResourceLeak> detectedMemoryLeaks = new ArrayList<>();
             
-            for (var leak : memoryLeaks) {
+            for (Object leak : memoryLeaks) {
                 ResourceLeak resourceLeak = new ResourceLeak(
                     "MEMORY_LEAK",
                     "memory-leak-" + System.identityHashCode(leak),
@@ -854,11 +869,11 @@ public class ResourceMonitor {
      */
     private void loadConfiguration() {
         try {
-            // Load monitoring thresholds from ConfigurationManager
-            var metricsThresholds = configurationManager.getMetricsThresholds();
-            var performanceBaselines = configurationManager.getPerformanceBaselines();
-            var alertConfiguration = configurationManager.getAlertConfiguration();
-            var monitoringSettings = configurationManager.getMonitoringSettings();
+            // Load monitoring thresholds from ConfigurationManager using available property methods
+            String metricsThresholds = configurationManager.getPropertyWithDefault("monitoring.metrics.thresholds", "default");
+            String performanceBaselines = configurationManager.getPropertyWithDefault("monitoring.performance.baselines", "default");
+            String alertConfiguration = configurationManager.getPropertyWithDefault("monitoring.alert.configuration", "default");
+            String monitoringSettings = configurationManager.getPropertyWithDefault("monitoring.settings", "default");
             
             this.monitoringIntervalMs = Long.parseLong(
                 configurationManager.getPropertyWithDefault("monitoring.interval.ms", 
@@ -1203,8 +1218,37 @@ public class ResourceMonitor {
         return 64L * 1024L; // 64KB per connection
     }
     
-    private long calculateThreadLeakAmount(Object leak) {
-        return 256L * 1024L; // 256KB per thread
+    private long calculateThreadLeakAmount(int leakCount) {
+        return leakCount * 256L * 1024L; // 256KB per leaked thread
+    }
+    
+    private Map<String, Object> calculateCurrentUtilization() {
+        Map<String, Object> utilization = new HashMap<>();
+        
+        try {
+            // Calculate memory utilization
+            ResourceMetrics memoryMetrics = getMemoryMetrics();
+            ResourceMetrics threadMetrics = getThreadPoolMetrics();
+            ResourceMetrics connectionMetrics = getConnectionPoolMetrics();
+            ResourceMetrics browserMetrics = getBrowserSessionMetrics();
+            
+            utilization.put("memoryUtilization", memoryMetrics.getOverallUtilization());
+            utilization.put("connectionUtilization", connectionMetrics.getConnectionPoolUtilization());
+            utilization.put("threadUtilization", threadMetrics.getThreadPoolUtilization());
+            utilization.put("browserSessionUtilization", browserMetrics.getBrowserSessionCount());
+            
+            // Add utilization percentages
+            utilization.put("memoryPercentage", memoryMetrics.getOverallUtilization() * 100);
+            utilization.put("connectionPercentage", connectionMetrics.getConnectionPoolUtilization() * 100);
+            utilization.put("threadPercentage", threadMetrics.getThreadPoolUtilization() * 100);
+            utilization.put("browserSessionPercentage", (browserMetrics.getBrowserSessionCount() / 10.0) * 100); // Against 10 session limit
+            
+        } catch (Exception e) {
+            logger.warn("Failed to calculate current utilization", e);
+            // Return empty utilization on error
+        }
+        
+        return utilization;
     }
     
     private String getStackTrace() {
