@@ -1,7 +1,7 @@
 package com.automation.framework.resources;
 
 // External imports
-import org.apache.http.config.RequestConfig;
+import org.apache.http.client.config.RequestConfig;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.time.Duration;
