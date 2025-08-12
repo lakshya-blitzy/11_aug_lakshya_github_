@@ -1,9 +1,14 @@
 package com.automation.framework.api;
 
 import com.automation.framework.exceptions.ErrorReporter;
+import com.automation.framework.exceptions.LogLevel;
+import com.automation.framework.validation.ValidationMode;
+import com.automation.framework.validation.ValidationReport;
 import io.restassured.path.xml.XmlPath;
+import io.restassured.path.xml.element.NodeChildren;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.networknt.schema.JsonSchema;
+import com.networknt.schema.ValidationMessage;
 import java.time.Instant;
 import java.util.regex.Pattern;
 import java.util.List;
@@ -147,11 +152,15 @@ public class ResponseValidator {
                 
                 // Perform schema validation if configured
                 if (validationConfig.getJsonSchemaPath() != null) {
-                    validateJsonSchema(response, validationConfig.getJsonSchemaPath(), result);
+                    ResponseValidationResult schemaResult = validateJsonSchema(response, validationConfig.getJsonSchemaPath());
+                    result.getErrors().addAll(schemaResult.getErrors());
+                    result.getWarnings().addAll(schemaResult.getWarnings());
                 }
                 
                 if (validationConfig.getXmlSchemaPath() != null) {
-                    validateXmlSchema(response, validationConfig.getXmlSchemaPath(), result);
+                    ResponseValidationResult schemaResult = validateXmlSchema(response, validationConfig.getXmlSchemaPath());
+                    result.getErrors().addAll(schemaResult.getErrors());
+                    result.getWarnings().addAll(schemaResult.getWarnings());
                 }
             }
             
@@ -264,7 +273,7 @@ public class ResponseValidator {
                 context.put("thresholdMs", timeoutThreshold);
                 context.put("exceedsBy", responseTimeMs - timeoutThreshold);
                 
-                errorReporter.createErrorContext(ErrorReporter.LogLevel.ERROR, errorMessage, null, context);
+                errorReporter.createErrorContext(LogLevel.ERROR, errorMessage, null, context);
                 
                 logger.error("Response time SLA violation: {}ms > {}ms", responseTimeMs, timeoutThreshold);
             } else {
@@ -1140,7 +1149,7 @@ public class ResponseValidator {
                 XmlPath xmlPath = XmlPath.from(xmlString);
                 
                 // Basic XML validation - check if we can parse it
-                List<String> nodeChildren = xmlPath.getNodeChildren("");
+                NodeChildren nodeChildren = xmlPath.getNodeChildren("");
                 if (nodeChildren.isEmpty()) {
                     result.addWarning("XML document appears to be empty or malformed");
                 }
@@ -1156,7 +1165,7 @@ public class ResponseValidator {
     private void validateXmlStructure(XmlPath xmlPath, ResponseValidationResult result) {
         try {
             // Perform basic XML structure validation
-            List<String> rootNodes = xmlPath.getNodeChildren("");
+            NodeChildren rootNodes = xmlPath.getNodeChildren("");
             
             if (rootNodes.isEmpty()) {
                 result.addError(ResponseValidationError.INVALID_XML_SCHEMA, "XML document has no root elements");
@@ -1749,34 +1758,7 @@ enum ResponseValidationError {
     }
 }
 
-/**
- * Enumeration of validation modes.
- */
-enum ValidationMode {
-    STRICT("Strict validation mode - all issues treated as errors"),
-    LENIENT("Lenient validation mode - non-critical issues treated as warnings"),
-    FAIL_FAST("Fail-fast mode - stops validation on first error"),
-    COLLECT_ALL_ERRORS("Collect all errors mode - continues validation to find all issues"),
-    PARTIAL_VALIDATION("Partial validation mode - validates only specified fields"),
-    STREAMING_VALIDATION("Streaming validation mode - validates large responses in chunks"),
-    PERFORMANCE_FOCUSED("Performance-focused mode - optimized for speed"),
-    COMPLIANCE_FOCUSED("Compliance-focused mode - enhanced validation for regulatory requirements");
-    
-    private final String description;
-    
-    ValidationMode(String description) {
-        this.description = description;
-    }
-    
-    public String getDescription() {
-        return description;
-    }
-    
-    @Override
-    public String toString() {
-        return name() + ": " + description;
-    }
-}
+
 
 /**
  * Configuration class for response validation settings.
@@ -2060,128 +2042,5 @@ class DataAssertion {
     }
 }
 
-/**
- * Represents a comprehensive validation report.
- */
-class ValidationReport {
-    
-    private final long totalValidations;
-    private final long totalErrors;
-    private final long totalWarnings;
-    private final long timeoutThreshold;
-    private final boolean strictModeEnabled;
-    private final ValidationMode validationMode;
-    private final Instant reportTimestamp;
-    private final int cacheSize;
-    private final String errorMessage;
-    
-    public ValidationReport(long totalValidations, long totalErrors, long totalWarnings, 
-                          long timeoutThreshold, boolean strictModeEnabled, ValidationMode validationMode,
-                          Instant reportTimestamp, int cacheSize) {
-        this.totalValidations = totalValidations;
-        this.totalErrors = totalErrors;
-        this.totalWarnings = totalWarnings;
-        this.timeoutThreshold = timeoutThreshold;
-        this.strictModeEnabled = strictModeEnabled;
-        this.validationMode = validationMode;
-        this.reportTimestamp = reportTimestamp;
-        this.cacheSize = cacheSize;
-        this.errorMessage = null;
-    }
-    
-    private ValidationReport(String errorMessage) {
-        this.totalValidations = 0;
-        this.totalErrors = 0;
-        this.totalWarnings = 0;
-        this.timeoutThreshold = 0;
-        this.strictModeEnabled = false;
-        this.validationMode = ValidationMode.LENIENT;
-        this.reportTimestamp = Instant.now();
-        this.cacheSize = 0;
-        this.errorMessage = errorMessage;
-    }
-    
-    public static ValidationReport createErrorReport(String errorMessage) {
-        return new ValidationReport(errorMessage);
-    }
-    
-    public long getTotalValidations() {
-        return totalValidations;
-    }
-    
-    public long getTotalErrors() {
-        return totalErrors;
-    }
-    
-    public long getTotalWarnings() {
-        return totalWarnings;
-    }
-    
-    public long getTimeoutThreshold() {
-        return timeoutThreshold;
-    }
-    
-    public boolean isStrictModeEnabled() {
-        return strictModeEnabled;
-    }
-    
-    public ValidationMode getValidationMode() {
-        return validationMode;
-    }
-    
-    public Instant getReportTimestamp() {
-        return reportTimestamp;
-    }
-    
-    public int getCacheSize() {
-        return cacheSize;
-    }
-    
-    public boolean hasError() {
-        return errorMessage != null;
-    }
-    
-    public String getErrorMessage() {
-        return errorMessage;
-    }
-    
-    public double getErrorRate() {
-        return totalValidations > 0 ? (double) totalErrors / totalValidations : 0.0;
-    }
-    
-    public double getWarningRate() {
-        return totalValidations > 0 ? (double) totalWarnings / totalValidations : 0.0;
-    }
-    
-    @Override
-    public String toString() {
-        if (errorMessage != null) {
-            return "ValidationReport[ERROR: " + errorMessage + "]";
-        }
-        
-        return String.format("ValidationReport[validations=%d, errors=%d, warnings=%d, errorRate=%.2f%%, " +
-                           "timeout=%dms, strict=%s, mode=%s, cache=%d]",
-                           totalValidations, totalErrors, totalWarnings, getErrorRate() * 100,
-                           timeoutThreshold, strictModeEnabled, validationMode, cacheSize);
-    }
-}
 
-/**
- * Placeholder for ValidationMessage class (would be from external JSON schema validator).
- */
-class ValidationMessage {
-    private final String message;
-    
-    public ValidationMessage(String message) {
-        this.message = message;
-    }
-    
-    public String getMessage() {
-        return message;
-    }
-    
-    @Override
-    public String toString() {
-        return message;
-    }
-}
+
