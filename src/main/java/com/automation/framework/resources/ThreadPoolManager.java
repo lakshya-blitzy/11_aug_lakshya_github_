@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import com.automation.framework.core.FrameworkManager;
 import com.automation.framework.core.ShutdownHandler;
 import com.automation.framework.core.ConfigurationManager;
+import com.automation.framework.resources.ModulePool;
 
 // Standard imports
 import java.util.*;
@@ -1814,36 +1815,7 @@ class ThreadLocalRegistry {
     }
 }
 
-/**
- * Enumeration of module pools for isolated thread pool management.
- * Each module has its own dedicated thread pool to prevent cascading failures.
- */
-enum ModulePool {
-    /**
-     * Web automation module pool for browser-based testing
-     */
-    WEB,
-    
-    /**
-     * API automation module pool for RESTful API testing
-     */
-    API,
-    
-    /**
-     * Reporting module pool for test result processing and report generation
-     */
-    REPORTING,
-    
-    /**
-     * Monitoring module pool for framework health and performance monitoring
-     */
-    MONITORING,
-    
-    /**
-     * Core services module pool for framework orchestration and coordination
-     */
-    CORE
-}
+
 
 /**
  * Enumeration of thread pool status states for lifecycle tracking.
