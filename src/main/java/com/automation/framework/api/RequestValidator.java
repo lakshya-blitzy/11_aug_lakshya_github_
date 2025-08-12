@@ -1039,9 +1039,19 @@ public class RequestValidator {
     private void validateXmlContent(XmlPath xmlPath, RequestValidationResult result) {
         try {
             // Validate XML structure basics
-            List<String> nodeChildren = xmlPath.getNodeChildren("");
-            if (nodeChildren.isEmpty()) {
+            Object nodeChildren = xmlPath.getNodeChildren("");
+            if (nodeChildren == null) {
                 result.addWarning("XML document appears to be empty or has no child nodes");
+            }
+            
+            // Try to get root element to ensure basic XML structure
+            try {
+                String rootElement = xmlPath.getString("name(.)");
+                if (rootElement == null || rootElement.trim().isEmpty()) {
+                    result.addWarning("XML document has no identifiable root element");
+                }
+            } catch (Exception rootException) {
+                result.addWarning("Could not identify XML root element: " + rootException.getMessage());
             }
         } catch (Exception e) {
             result.addError(RequestValidationError.INVALID_XML_PAYLOAD, 
