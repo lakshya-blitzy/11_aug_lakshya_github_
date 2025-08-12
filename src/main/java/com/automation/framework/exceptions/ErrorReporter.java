@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import java.util.UUID;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.security.MessageDigest;
@@ -258,7 +259,12 @@ public class ErrorReporter {
      * @return The current correlation ID or null if none is set
      */
     public String getCorrelationId() {
-        return correlationContext.get();
+        String correlationId = correlationContext.get();
+        if (correlationId == null) {
+            correlationId = generateCorrelationId();
+            correlationContext.set(correlationId);
+        }
+        return correlationId;
     }
     
     /**
@@ -275,9 +281,30 @@ public class ErrorReporter {
         }
         
         String maskedData = data;
-        for (Pattern pattern : sensitiveDataPatterns) {
-            maskedData = pattern.matcher(maskedData).replaceAll(MASKED_VALUE);
-        }
+        
+        // Password patterns - handle both JSON and key=value formats
+        maskedData = Pattern.compile("(?i)(\"password\"|\"pwd\"|\"pass\"|password|pwd|pass)(\\s*[:=]\\s*[\"']?)([^\\s\"',}]+)[\"']?", Pattern.CASE_INSENSITIVE)
+                            .matcher(maskedData).replaceAll("$1$2\"" + MASKED_VALUE + "\"");
+        
+        // Token patterns - handle both JSON and key=value formats
+        maskedData = Pattern.compile("(?i)(\"token\"|\"bearer\"|\"auth\"|\"key\"|token|bearer|auth|key)(\\s*[:=]\\s*[\"']?)([^\\s\"',}]+)[\"']?", Pattern.CASE_INSENSITIVE)
+                            .matcher(maskedData).replaceAll("$1$2\"" + MASKED_VALUE + "\"");
+        
+        // Credit card patterns - full replacement
+        maskedData = Pattern.compile("\\b(?:\\d{4}[-\\s]?){3}\\d{4}\\b")
+                            .matcher(maskedData).replaceAll(MASKED_VALUE);
+        
+        // Social Security Number patterns - full replacement
+        maskedData = Pattern.compile("\\b\\d{3}-?\\d{2}-?\\d{4}\\b")
+                            .matcher(maskedData).replaceAll(MASKED_VALUE);
+        
+        // Email patterns - full replacement
+        maskedData = Pattern.compile("\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b")
+                            .matcher(maskedData).replaceAll(MASKED_VALUE);
+        
+        // API key patterns - handle both JSON and key=value formats
+        maskedData = Pattern.compile("(?i)(\"api[_-]?key\"|\"secret[_-]?key\"|api[_-]?key|secret[_-]?key)(\\s*[:=]\\s*[\"']?)([A-Za-z0-9\\-_]+)[\"']?", Pattern.CASE_INSENSITIVE)
+                            .matcher(maskedData).replaceAll("$1$2\"" + MASKED_VALUE + "\"");
         
         return maskedData;
     }
@@ -543,11 +570,13 @@ public class ErrorReporter {
             
             return new ErrorMetrics(
                 totalErrorCount.get(),
-                errorsByLevel,
-                errorsBySeverity,
                 calculateErrorRate(),
                 calculateAverageErrorsPerMinute(),
                 lastErrorTime.get(),
+                Instant.now(), // timeWindow
+                Duration.ofMinutes(60), // timeWindowDuration
+                errorsByLevel,
+                errorsBySeverity,
                 generateErrorTrends(),
                 generateCorrelationIdMetrics(),
                 generateSensitiveDataMaskingMetrics(),
@@ -1007,612 +1036,5 @@ public class ErrorReporter {
         metrics.put("structuredLoggingEnabled", true);
         metrics.put("jsonFormat", true);
         return metrics;
-    }
-}
-
-/**
- * Enumeration of logging levels in hierarchical order.
- * Each level represents increasing severity and importance.
- */
-enum LogLevel {
-    /**
-     * Trace level - most detailed logging for debugging purposes
-     */
-    TRACE,
-    
-    /**
-     * Debug level - detailed information for troubleshooting
-     */
-    DEBUG,
-    
-    /**
-     * Info level - general information about application flow
-     */
-    INFO,
-    
-    /**
-     * Warning level - potentially harmful situations
-     */
-    WARN,
-    
-    /**
-     * Error level - serious problems that don't stop execution
-     */
-    ERROR,
-    
-    /**
-     * Fatal level - critical errors that may cause application termination
-     */
-    FATAL
-}
-
-/**
- * Enumeration of error severity levels for classification and prioritization.
- * Used for error routing, alerting, and escalation decisions.
- */
-enum ErrorSeverity {
-    /**
-     * Low severity - informational errors with minimal impact
-     */
-    LOW,
-    
-    /**
-     * Medium severity - warnings and non-critical errors
-     */
-    MEDIUM,
-    
-    /**
-     * High severity - serious errors requiring attention
-     */
-    HIGH,
-    
-    /**
-     * Critical severity - urgent errors requiring immediate action
-     */
-    CRITICAL
-}
-
-/**
- * Comprehensive error context information capturing all relevant details about an error occurrence.
- * This class provides complete error information for debugging, monitoring, and analysis purposes.
- */
-class ErrorContext {
-    
-    private final String errorId;
-    private final LogLevel errorLevel;
-    private final Instant timestamp;
-    private final String stackTrace;
-    private final String correlationId;
-    private final String moduleName;
-    private final String testName;
-    private final String screenshotData;
-    private final String apiRequestData;
-    private final String apiResponseData;
-    private final Map<String, Object> systemState;
-    private final Map<String, Object> additionalContext;
-    private final String errorSignature;
-    private final ErrorSeverity errorSeverity;
-    private final Throwable exception;
-    
-    /**
-     * Creates a new ErrorContext with all error details.
-     */
-    public ErrorContext(String errorId, LogLevel errorLevel, Instant timestamp, String message,
-                       String stackTrace, String correlationId, String moduleName, String testName,
-                       String screenshotData, String apiRequestData, String apiResponseData,
-                       Map<String, Object> systemState, Map<String, Object> additionalContext,
-                       String errorSignature, ErrorSeverity errorSeverity, Throwable exception) {
-        this.errorId = errorId;
-        this.errorLevel = errorLevel;
-        this.timestamp = timestamp;
-        this.stackTrace = stackTrace;
-        this.correlationId = correlationId;
-        this.moduleName = moduleName;
-        this.testName = testName;
-        this.screenshotData = screenshotData;
-        this.apiRequestData = apiRequestData;
-        this.apiResponseData = apiResponseData;
-        this.systemState = systemState != null ? new HashMap<>(systemState) : new HashMap<>();
-        this.additionalContext = additionalContext != null ? new HashMap<>(additionalContext) : new HashMap<>();
-        this.errorSignature = errorSignature;
-        this.errorSeverity = errorSeverity;
-        this.exception = exception;
-    }
-    
-    /**
-     * Gets the exception that caused this error.
-     * 
-     * @return The original exception or null if no exception was involved
-     */
-    public Throwable getException() {
-        return exception;
-    }
-    
-    /**
-     * Gets the error level (log level) for this error.
-     * 
-     * @return The error level
-     */
-    public LogLevel getErrorLevel() {
-        return errorLevel;
-    }
-    
-    /**
-     * Gets the timestamp when this error occurred.
-     * 
-     * @return The error timestamp
-     */
-    public Instant getTimestamp() {
-        return timestamp;
-    }
-    
-    /**
-     * Gets the stack trace information for this error.
-     * 
-     * @return The stack trace as a string, or null if no stack trace was captured
-     */
-    public String getStackTrace() {
-        return stackTrace;
-    }
-    
-    /**
-     * Gets the correlation ID for distributed tracing.
-     * 
-     * @return The correlation ID
-     */
-    public String getCorrelationId() {
-        return correlationId;
-    }
-    
-    /**
-     * Gets the name of the module where this error occurred.
-     * 
-     * @return The module name
-     */
-    public String getModuleName() {
-        return moduleName;
-    }
-    
-    /**
-     * Gets the name of the test that was running when this error occurred.
-     * 
-     * @return The test name
-     */
-    public String getTestName() {
-        return testName;
-    }
-    
-    /**
-     * Gets the screenshot data captured when this error occurred.
-     * Typically used for web automation errors.
-     * 
-     * @return The screenshot data as base64 encoded string, or null if no screenshot was captured
-     */
-    public String getScreenshotData() {
-        return screenshotData;
-    }
-    
-    /**
-     * Gets the API request data associated with this error.
-     * Used for API testing errors to provide request context.
-     * 
-     * @return The API request data as JSON string, or null if no API request was involved
-     */
-    public String getAPIRequestData() {
-        return apiRequestData;
-    }
-    
-    /**
-     * Gets the API response data associated with this error.
-     * Used for API testing errors to provide response context.
-     * 
-     * @return The API response data as JSON string, or null if no API response was available
-     */
-    public String getAPIResponseData() {
-        return apiResponseData;
-    }
-    
-    /**
-     * Gets the system state information captured when this error occurred.
-     * Includes memory usage, thread information, and other system metrics.
-     * 
-     * @return Map containing system state information
-     */
-    public Map<String, Object> getSystemState() {
-        return new HashMap<>(systemState);
-    }
-    
-    /**
-     * Gets additional context information provided with this error.
-     * 
-     * @return Map containing additional context data
-     */
-    public Map<String, Object> getAdditionalContext() {
-        return new HashMap<>(additionalContext);
-    }
-    
-    /**
-     * Gets the masked sensitive data (same as additional context but with sensitive data masked).
-     * 
-     * @return Map containing masked context data
-     */
-    public Map<String, Object> getMaskedSensitiveData() {
-        return getAdditionalContext(); // Already masked in constructor
-    }
-    
-    /**
-     * Gets the error signature used for deduplication and categorization.
-     * 
-     * @return The error signature hash
-     */
-    public String getErrorSignature() {
-        return errorSignature;
-    }
-    
-    /**
-     * Gets the unique error ID for this specific error occurrence.
-     * 
-     * @return The unique error ID
-     */
-    public String getErrorId() {
-        return errorId;
-    }
-    
-    /**
-     * Gets the error severity level.
-     * 
-     * @return The error severity
-     */
-    public ErrorSeverity getErrorSeverity() {
-        return errorSeverity;
-    }
-    
-    /**
-     * Converts this error context to a structured JSON format.
-     * Creates a comprehensive JSON representation suitable for log analysis systems.
-     * 
-     * @return JSON formatted string representation of this error context
-     */
-    public String toStructuredFormat() {
-        try {
-            Map<String, Object> structuredData = new HashMap<>();
-            
-            // Basic error information
-            structuredData.put("error_id", errorId);
-            structuredData.put("correlation_id", correlationId);
-            structuredData.put("timestamp", timestamp.toString());
-            structuredData.put("error_level", errorLevel.toString());
-            structuredData.put("error_severity", errorSeverity.toString());
-            structuredData.put("error_signature", errorSignature);
-            
-            // Context information
-            structuredData.put("module_name", moduleName);
-            structuredData.put("test_name", testName);
-            
-            // Exception details
-            if (exception != null) {
-                Map<String, Object> exceptionData = new HashMap<>();
-                exceptionData.put("type", exception.getClass().getName());
-                exceptionData.put("message", exception.getMessage());
-                exceptionData.put("stack_trace", stackTrace);
-                structuredData.put("exception", exceptionData);
-            }
-            
-            // Capture data
-            if (screenshotData != null) {
-                structuredData.put("screenshot_data", screenshotData);
-            }
-            if (apiRequestData != null) {
-                structuredData.put("api_request_data", apiRequestData);
-            }
-            if (apiResponseData != null) {
-                structuredData.put("api_response_data", apiResponseData);
-            }
-            
-            // System and additional context
-            structuredData.put("system_state", systemState);
-            structuredData.put("additional_context", additionalContext);
-            
-            // Create ObjectMapper for JSON serialization
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.configure(com.fasterxml.jackson.databind.SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-            mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-            
-            return mapper.writeValueAsString(structuredData);
-            
-        } catch (Exception e) {
-            // Fallback to simple format if JSON serialization fails
-            return String.format("{\"error_id\":\"%s\",\"timestamp\":\"%s\",\"level\":\"%s\",\"message\":\"JSON serialization failed: %s\"}", 
-                                errorId, timestamp.toString(), errorLevel.toString(), e.getMessage());
-        }
-    }
-    
-    @Override
-    public String toString() {
-        return String.format("ErrorContext{errorId='%s', level=%s, timestamp=%s, correlationId='%s', module='%s', test='%s'}", 
-                           errorId, errorLevel, timestamp, correlationId, moduleName, testName);
-    }
-    
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null || getClass() != obj.getClass()) return false;
-        ErrorContext that = (ErrorContext) obj;
-        return Objects.equals(errorId, that.errorId);
-    }
-    
-    @Override
-    public int hashCode() {
-        return Objects.hash(errorId);
-    }
-}
-
-/**
- * Comprehensive error metrics tracking for monitoring and analysis.
- * Provides detailed statistics about error occurrences, trends, and patterns.
- */
-class ErrorMetrics {
-    
-    private final long totalErrors;
-    private final Map<LogLevel, Long> errorsByLevel;
-    private final Map<ErrorSeverity, Long> errorsBySeverity;
-    private final double errorRate;
-    private final double averageErrorsPerMinute;
-    private final Instant lastErrorTime;
-    private final Map<String, Object> errorTrends;
-    private final Map<String, Object> correlationIdMetrics;
-    private final Map<String, Object> sensitiveDataMaskingMetrics;
-    private final Map<String, Object> structuredLogMetrics;
-    private final Instant timeWindow;
-    private volatile Duration timeWindowDuration = Duration.ofHours(1);
-    
-    /**
-     * Creates a new ErrorMetrics instance with all metric data.
-     */
-    public ErrorMetrics(long totalErrors, Map<LogLevel, Long> errorsByLevel, 
-                       Map<ErrorSeverity, Long> errorsBySeverity, double errorRate,
-                       double averageErrorsPerMinute, Instant lastErrorTime,
-                       Map<String, Object> errorTrends, Map<String, Object> correlationIdMetrics,
-                       Map<String, Object> sensitiveDataMaskingMetrics, 
-                       Map<String, Object> structuredLogMetrics) {
-        this.totalErrors = totalErrors;
-        this.errorsByLevel = errorsByLevel != null ? new HashMap<>(errorsByLevel) : new HashMap<>();
-        this.errorsBySeverity = errorsBySeverity != null ? new HashMap<>(errorsBySeverity) : new HashMap<>();
-        this.errorRate = errorRate;
-        this.averageErrorsPerMinute = averageErrorsPerMinute;
-        this.lastErrorTime = lastErrorTime;
-        this.errorTrends = errorTrends != null ? new HashMap<>(errorTrends) : new HashMap<>();
-        this.correlationIdMetrics = correlationIdMetrics != null ? new HashMap<>(correlationIdMetrics) : new HashMap<>();
-        this.sensitiveDataMaskingMetrics = sensitiveDataMaskingMetrics != null ? new HashMap<>(sensitiveDataMaskingMetrics) : new HashMap<>();
-        this.structuredLogMetrics = structuredLogMetrics != null ? new HashMap<>(structuredLogMetrics) : new HashMap<>();
-        this.timeWindow = Instant.now();
-    }
-    
-    /**
-     * Gets the total number of errors recorded.
-     * 
-     * @return Total error count
-     */
-    public long getTotalErrors() {
-        return totalErrors;
-    }
-    
-    /**
-     * Gets the error count breakdown by log level.
-     * 
-     * @return Map of log levels to error counts
-     */
-    public Map<LogLevel, Long> getErrorsByLevel() {
-        return new HashMap<>(errorsByLevel);
-    }
-    
-    /**
-     * Gets the error count breakdown by severity level.
-     * 
-     * @return Map of severity levels to error counts
-     */
-    public Map<ErrorSeverity, Long> getErrorsBySeverity() {
-        return new HashMap<>(errorsBySeverity);
-    }
-    
-    /**
-     * Gets the current error rate (errors per unit time).
-     * 
-     * @return Error rate as errors per minute
-     */
-    public double getErrorRate() {
-        return errorRate;
-    }
-    
-    /**
-     * Gets the average number of errors per minute over the time window.
-     * 
-     * @return Average errors per minute
-     */
-    public double getAverageErrorsPerMinute() {
-        return averageErrorsPerMinute;
-    }
-    
-    /**
-     * Gets the timestamp of the most recent error.
-     * 
-     * @return Timestamp of last error
-     */
-    public Instant getLastErrorTime() {
-        return lastErrorTime;
-    }
-    
-    /**
-     * Gets error trend analysis data.
-     * Includes patterns, spikes, and historical comparisons.
-     * 
-     * @return Map containing trend analysis data
-     */
-    public Map<String, Object> getErrorTrends() {
-        return new HashMap<>(errorTrends);
-    }
-    
-    /**
-     * Gets metrics related to correlation ID usage and tracking.
-     * 
-     * @return Map containing correlation ID metrics
-     */
-    public Map<String, Object> getCorrelationIdMetrics() {
-        return new HashMap<>(correlationIdMetrics);
-    }
-    
-    /**
-     * Gets metrics about sensitive data masking operations.
-     * 
-     * @return Map containing masking metrics
-     */
-    public Map<String, Object> getSensitiveDataMaskingMetrics() {
-        return new HashMap<>(sensitiveDataMaskingMetrics);
-    }
-    
-    /**
-     * Gets metrics about structured logging performance and usage.
-     * 
-     * @return Map containing structured log metrics
-     */
-    public Map<String, Object> getStructuredLogMetrics() {
-        return new HashMap<>(structuredLogMetrics);
-    }
-    
-    /**
-     * Resets all metrics to zero.
-     * Used for starting fresh monitoring periods.
-     */
-    public void resetMetrics() {
-        // Note: This implementation creates a new instance rather than modifying in place
-        // since this class is designed to be immutable. In practice, the ErrorReporter
-        // would create a new ErrorMetrics instance to represent reset metrics.
-    }
-    
-    /**
-     * Gets the current time window for metric calculations.
-     * 
-     * @return The time window start time
-     */
-    public Instant getTimeWindow() {
-        return timeWindow;
-    }
-    
-    /**
-     * Sets the time window duration for metric calculations.
-     * 
-     * @param duration The new time window duration
-     */
-    public void setTimeWindow(Duration duration) {
-        if (duration != null && !duration.isNegative() && !duration.isZero()) {
-            this.timeWindowDuration = duration;
-        }
-    }
-    
-    /**
-     * Generates a comprehensive metrics report.
-     * 
-     * @return JSON formatted metrics report
-     */
-    public String generateMetricsReport() {
-        try {
-            Map<String, Object> report = new HashMap<>();
-            
-            // Basic counts
-            report.put("total_errors", totalErrors);
-            report.put("error_rate", errorRate);
-            report.put("average_errors_per_minute", averageErrorsPerMinute);
-            report.put("last_error_time", lastErrorTime != null ? lastErrorTime.toString() : null);
-            report.put("time_window", timeWindow.toString());
-            report.put("time_window_duration_minutes", timeWindowDuration.toMinutes());
-            
-            // Level breakdown
-            Map<String, Long> levelBreakdown = new HashMap<>();
-            errorsByLevel.forEach((level, count) -> levelBreakdown.put(level.toString(), count));
-            report.put("errors_by_level", levelBreakdown);
-            
-            // Severity breakdown
-            Map<String, Long> severityBreakdown = new HashMap<>();
-            errorsBySeverity.forEach((severity, count) -> severityBreakdown.put(severity.toString(), count));
-            report.put("errors_by_severity", severityBreakdown);
-            
-            // Additional metrics
-            report.put("error_trends", errorTrends);
-            report.put("correlation_id_metrics", correlationIdMetrics);
-            report.put("sensitive_data_masking_metrics", sensitiveDataMaskingMetrics);
-            report.put("structured_log_metrics", structuredLogMetrics);
-            
-            // Summary statistics
-            Map<String, Object> summary = new HashMap<>();
-            summary.put("high_severity_percentage", calculateHighSeverityPercentage());
-            summary.put("critical_errors", errorsBySeverity.getOrDefault(ErrorSeverity.CRITICAL, 0L));
-            summary.put("most_common_level", findMostCommonLevel());
-            summary.put("most_common_severity", findMostCommonSeverity());
-            report.put("summary", summary);
-            
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.configure(com.fasterxml.jackson.databind.SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-            mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-            
-            return mapper.writeValueAsString(report);
-            
-        } catch (Exception e) {
-            return String.format("{\"error\":\"Failed to generate metrics report: %s\"}", e.getMessage());
-        }
-    }
-    
-    /**
-     * Calculates the percentage of high and critical severity errors.
-     */
-    private double calculateHighSeverityPercentage() {
-        if (totalErrors == 0) {
-            return 0.0;
-        }
-        
-        long highSeverityCount = errorsBySeverity.getOrDefault(ErrorSeverity.HIGH, 0L) + 
-                                errorsBySeverity.getOrDefault(ErrorSeverity.CRITICAL, 0L);
-        
-        return (double) highSeverityCount / totalErrors * 100.0;
-    }
-    
-    /**
-     * Finds the most common log level.
-     */
-    private String findMostCommonLevel() {
-        return errorsByLevel.entrySet().stream()
-                           .max(Map.Entry.comparingByValue())
-                           .map(entry -> entry.getKey().toString())
-                           .orElse("NONE");
-    }
-    
-    /**
-     * Finds the most common error severity.
-     */
-    private String findMostCommonSeverity() {
-        return errorsBySeverity.entrySet().stream()
-                              .max(Map.Entry.comparingByValue())
-                              .map(entry -> entry.getKey().toString())
-                              .orElse("NONE");
-    }
-    
-    @Override
-    public String toString() {
-        return String.format("ErrorMetrics{totalErrors=%d, errorRate=%.2f, lastErrorTime=%s}", 
-                           totalErrors, errorRate, lastErrorTime);
-    }
-    
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null || getClass() != obj.getClass()) return false;
-        ErrorMetrics that = (ErrorMetrics) obj;
-        return totalErrors == that.totalErrors &&
-               Double.compare(that.errorRate, errorRate) == 0 &&
-               Objects.equals(timeWindow, that.timeWindow);
-    }
-    
-    @Override
-    public int hashCode() {
-        return Objects.hash(totalErrors, errorRate, timeWindow);
     }
 }
