@@ -86,8 +86,8 @@ public class RetryMechanism {
      */
     private RetryMechanism() {
         // Initialize framework integration components
-        this.errorReporter = ErrorReporter.getInstance();
-        this.connectionPoolManager = ConnectionPoolManager.getInstance();
+        this.errorReporter = new ErrorReporter();
+        this.connectionPoolManager = new ConnectionPoolManager();
         this.configurationManager = ConfigurationManager.getInstance();
         this.threadPoolManager = ThreadPoolManager.getInstance();
         
@@ -194,8 +194,8 @@ public class RetryMechanism {
                     updateSuccessMetrics(operationName, attemptCount, totalDuration);
                     resetCircuitBreaker(operationName);
                     
-                    errorReporter.info("Operation {} succeeded on attempt {} in {}ms", 
-                        operationName, attemptCount, totalDuration.toMillis());
+                    errorReporter.info(String.format("Operation %s succeeded on attempt %d in %dms", 
+                        operationName, attemptCount, totalDuration.toMillis()));
                     
                     return createSuccessResult(operationName, config.getRetryPolicy(), result, 
                         attemptCount, startTime);
@@ -204,7 +204,11 @@ public class RetryMechanism {
                     lastException = e;
                     
                     // Log the attempt failure with detailed context
-                    errorReporter.logException("Operation attempt failed", e);
+                    Map<String, Object> context = new HashMap<>();
+                    context.put("operationName", operationName);
+                    context.put("attemptNumber", attemptCount);
+                    context.put("correlationId", correlationId);
+                    errorReporter.logException(e, "Operation attempt failed", context);
                     logger.warn("Attempt {} failed for operation {}: {}", 
                         attemptCount, operationName, e.getMessage());
                     
@@ -251,8 +255,8 @@ public class RetryMechanism {
             String failureReason = String.format("All %d retry attempts failed. Last exception: %s", 
                 attemptCount, lastException != null ? lastException.getMessage() : "Unknown");
             
-            errorReporter.error("Retry operation {} failed after {} attempts in {}ms: {}", 
-                operationName, attemptCount, totalDuration.toMillis(), failureReason);
+            errorReporter.error(String.format("Retry operation %s failed after %d attempts in %dms: %s", 
+                operationName, attemptCount, totalDuration.toMillis(), failureReason));
             
             return createFailedResult(operationName, config.getRetryPolicy(), lastException, 
                 attemptCount, startTime, failureReason);
@@ -624,7 +628,7 @@ public class RetryMechanism {
             logger.warn("Circuit breaker OPENED for operation {} - failure rate: {:.2f}%", 
                 operationName, failureRate * 100);
             
-            errorReporter.error("Circuit breaker opened for operation {} due to high failure rate", operationName);
+            errorReporter.error(String.format("Circuit breaker opened for operation %s due to high failure rate", operationName));
         }
     }
     
