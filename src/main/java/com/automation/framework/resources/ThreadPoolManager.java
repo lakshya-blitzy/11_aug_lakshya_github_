@@ -189,7 +189,13 @@ public class ThreadPoolManager {
             
             // Register with framework manager
             try {
-                frameworkManager.registerModule("ThreadPoolManager", this);
+                Map<String, Object> moduleConfig = new HashMap<>();
+                moduleConfig.put("type", "ThreadPoolManager");
+                moduleConfig.put("version", "1.0.0");
+                moduleConfig.put("totalModules", ModulePool.values().length);
+                moduleConfig.put("capabilities", Arrays.asList("isolation", "rebalancing", "monitoring", "cleanup"));
+                
+                frameworkManager.registerModule("ThreadPoolManager", this, moduleConfig);
                 logger.debug("Registered ThreadPoolManager with FrameworkManager");
             } catch (Exception e) {
                 logger.error("Failed to register with FrameworkManager", e);
@@ -198,8 +204,16 @@ public class ThreadPoolManager {
             
             // Register shutdown hook with shutdown handler
             try {
-                shutdownHandler.addShutdownHook("ThreadPoolManager", this::shutdownAllPools);
-                logger.debug("Registered shutdown hook with ShutdownHandler");
+                // Register JVM shutdown hook directly for thread pool cleanup
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                    logger.info("JVM shutdown detected - initiating ThreadPoolManager cleanup");
+                    shutdownAllPools();
+                    logger.info("ThreadPoolManager shutdown complete");
+                }, "ThreadPoolManager-ShutdownHook"));
+                
+                // Also coordinate with framework shutdown handler if available
+                shutdownHandler.addShutdownHook();
+                logger.debug("Registered shutdown hook with ShutdownHandler and JVM Runtime");
             } catch (Exception e) {
                 logger.error("Failed to register shutdown hook", e);
                 throw new RuntimeException("Shutdown hook registration failed", e);
