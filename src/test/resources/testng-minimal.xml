@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+
+<!-- 
+Minimal TestNG Suite Configuration for Java Automation Framework
+Current state validation with existing test classes only
+-->
+
+<suite name="AutomationFrameworkMinimalSuite" 
+       verbose="2" 
+       parallel="none" 
+       thread-count="1"
+       time-out="300000"
+       preserve-order="true">
+
+    <!-- Suite-level parameters for basic configuration -->
+    <parameter name="environment" value="test"/>
+    <parameter name="logLevel" value="INFO"/>
+
+    <!-- Minimal Framework Tests -->
+    <test name="FrameworkValidationTests" 
+          preserve-order="true" 
+          parallel="false"
+          thread-count="1">
+        
+        <!-- No specific test classes referenced - will discover available tests -->
+        <packages>
+            <package name="com.automation.framework.*"/>
+        </packages>
+        
+    </test>
+
+</suite>
