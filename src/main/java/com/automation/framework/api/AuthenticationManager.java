@@ -4,6 +4,7 @@ package com.automation.framework.api;
 import com.automation.framework.core.ConfigurationManager;
 import com.automation.framework.exceptions.ErrorReporter;
 import com.automation.framework.resources.ThreadPoolManager;
+import com.automation.framework.resources.ModulePool;
 import com.automation.framework.resources.MemoryManager;
 
 // External imports for cryptography and encoding
@@ -28,6 +29,7 @@ import com.nimbusds.oauth2.sdk.AuthorizationCodeGrant;
 // External imports for concurrent operations and thread safety
 import java.lang.ThreadLocal;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -91,7 +93,7 @@ public class AuthenticationManager {
     private static final int AES_KEY_LENGTH = 256;
     private static final Duration DEFAULT_TOKEN_REFRESH_INTERVAL = Duration.ofMinutes(5);
     private static final Duration DEFAULT_CREDENTIAL_ROTATION_INTERVAL = Duration.ofHours(24);
-    private static final Duration TOKEN_EXPIRY_BUFFER = Duration.ofMinutes(2);
+    protected static final Duration TOKEN_EXPIRY_BUFFER = Duration.ofMinutes(2);
     
     // Singleton instance management
     private static volatile AuthenticationManager instance;
@@ -134,6 +136,7 @@ public class AuthenticationManager {
     private volatile Duration credentialRotationInterval = DEFAULT_CREDENTIAL_ROTATION_INTERVAL;
     private ScheduledFuture<?> tokenRefreshTask;
     private ScheduledFuture<?> credentialRotationTask;
+    private final ScheduledExecutorService tokenScheduler;
     
     // Authentication history and audit
     private final Queue<AuthenticationEvent> authHistory = new LinkedList<>();
@@ -145,9 +148,16 @@ public class AuthenticationManager {
      */
     private AuthenticationManager() {
         this.configurationManager = ConfigurationManager.getInstance();
-        this.errorReporter = ErrorReporter.getInstance();
+        this.errorReporter = new ErrorReporter();
         this.threadPoolManager = ThreadPoolManager.getInstance();
         this.memoryManager = MemoryManager.getInstance();
+        
+        // Initialize scheduled executor for token management
+        this.tokenScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "AuthenticationManager-TokenScheduler");
+            t.setDaemon(true);
+            return t;
+        });
         
         // Initialize AES encryption key
         this.encryptionKey = generateEncryptionKey();
@@ -161,7 +171,7 @@ public class AuthenticationManager {
         loadAuthenticationConfiguration();
         
         // Register ThreadLocal cleanup
-        threadPoolManager.registerThreadLocalCleanup(this::cleanupThreadLocalTokens);
+        threadPoolManager.registerThreadLocalCleanup(threadLocalTokens, "AuthenticationManager-TokenCache");
         
         // Start auto-refresh if enabled
         if (autoRefreshEnabled) {
@@ -197,7 +207,8 @@ public class AuthenticationManager {
      * @throws AuthenticationException if authentication fails
      */
     public TokenInfo authenticate(AuthenticationConfiguration config) {
-        String correlationId = errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        String correlationId = errorReporter.getCorrelationId();
         Instant startTime = Instant.now();
         
         try {
@@ -272,7 +283,7 @@ public class AuthenticationManager {
                 null
             ));
             
-            errorReporter.logException("Authentication failed for type: " + config.getAuthenticationType(), e);
+            errorReporter.logException(e, "Authentication failed for type: " + config.getAuthenticationType(), null);
             throw new AuthenticationException("Authentication failed: " + e.getMessage(), e);
             
         } finally {
@@ -288,7 +299,8 @@ public class AuthenticationManager {
      * @return true if credentials are valid and secure
      */
     public boolean validateCredentials(AuthenticationType authenticationType) {
-        String correlationId = errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        String correlationId = errorReporter.getCorrelationId();
         
         try {
             authLock.readLock().lock();
@@ -334,7 +346,7 @@ public class AuthenticationManager {
             return true;
             
         } catch (Exception e) {
-            errorReporter.logException("Credential validation failed for type: " + authenticationType, e);
+            errorReporter.logException(e, "Credential validation failed for type: " + authenticationType, null);
             securityViolationCount.incrementAndGet();
             return false;
             
@@ -352,7 +364,8 @@ public class AuthenticationManager {
      * @return Refreshed TokenInfo or null if refresh not supported/failed
      */
     public TokenInfo refreshToken(AuthenticationConfiguration config) {
-        String correlationId = errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        String correlationId = errorReporter.getCorrelationId();
         
         try {
             tokenRefreshCount.incrementAndGet();
@@ -407,7 +420,7 @@ public class AuthenticationManager {
             return refreshedToken;
             
         } catch (Exception e) {
-            errorReporter.logException("Token refresh failed for type: " + config.getAuthenticationType(), e);
+            errorReporter.logException(e, "Token refresh failed for type: " + config.getAuthenticationType(), null);
             return null;
             
         } finally {
@@ -440,7 +453,7 @@ public class AuthenticationManager {
             return AuthenticationStatus.AUTHENTICATED;
             
         } catch (Exception e) {
-            errorReporter.logException("Error checking authentication status", e);
+            errorReporter.logException(e, "Error checking authentication status", null);
             return AuthenticationStatus.AUTHENTICATION_FAILED;
         }
     }
@@ -456,7 +469,7 @@ public class AuthenticationManager {
             TokenInfo currentToken = getCurrentToken(authenticationType);
             return currentToken != null && !currentToken.isExpired();
         } catch (Exception e) {
-            errorReporter.logException("Error validating token", e);
+            errorReporter.logException(e, "Error validating token", null);
             return false;
         }
     }
@@ -487,7 +500,7 @@ public class AuthenticationManager {
             status.put("tokenType", currentToken.getTokenType());
             
         } catch (Exception e) {
-            errorReporter.logException("Error getting token expiration status", e);
+            errorReporter.logException(e, "Error getting token expiration status", null);
             status.put("error", e.getMessage());
         }
         
@@ -531,7 +544,7 @@ public class AuthenticationManager {
             return true;
             
         } catch (Exception e) {
-            errorReporter.logException("Error checking authentication health", e);
+            errorReporter.logException(e, "Error checking authentication health", null);
             return false;
         }
     }
@@ -564,7 +577,7 @@ public class AuthenticationManager {
             }
             
         } catch (Exception e) {
-            errorReporter.logException("Error getting credential status", e);
+            errorReporter.logException(e, "Error getting credential status", null);
             status.put("error", e.getMessage());
             
         } finally {
@@ -583,7 +596,8 @@ public class AuthenticationManager {
      * @return true if rotation was successful
      */
     public boolean rotateCredentials(AuthenticationType authenticationType, String newCredentials) {
-        String correlationId = errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        String correlationId = errorReporter.getCorrelationId();
         
         try {
             authLock.writeLock().lock();
@@ -624,12 +638,14 @@ public class AuthenticationManager {
                 credentialStore.put(credentialKey + "_backup", oldCredential);
                 
                 // Schedule backup cleanup
-                threadPoolManager.submitAsyncTask(() -> {
+                threadPoolManager.submitAsyncTask(ModulePool.API, () -> {
                     try {
                         Thread.sleep(Duration.ofMinutes(30).toMillis());
                         credentialStore.remove(credentialKey + "_backup");
+                        return null;
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
+                        return null;
                     }
                 });
             }
@@ -639,7 +655,7 @@ public class AuthenticationManager {
             return true;
             
         } catch (Exception e) {
-            errorReporter.logException("Credential rotation failed for type: " + authenticationType, e);
+            errorReporter.logException(e, "Credential rotation failed for type: " + authenticationType, null);
             return false;
             
         } finally {
@@ -653,7 +669,8 @@ public class AuthenticationManager {
      * Used for security cleanup or system reset scenarios.
      */
     public void clearCredentialCache() {
-        String correlationId = errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        String correlationId = errorReporter.getCorrelationId();
         
         try {
             authLock.writeLock().lock();
@@ -678,7 +695,7 @@ public class AuthenticationManager {
             logger.info("Credential cache cleared successfully [{}]", correlationId);
             
         } catch (Exception e) {
-            errorReporter.logException("Error clearing credential cache", e);
+            errorReporter.logException(e, "Error clearing credential cache", null);
             
         } finally {
             authLock.writeLock().unlock();
@@ -724,7 +741,7 @@ public class AuthenticationManager {
             autoRefreshEnabled = true;
             
             // Schedule automatic token refresh task
-            tokenRefreshTask = threadPoolManager.getApiThreadPool().scheduleAtFixedRate(
+            tokenRefreshTask = tokenScheduler.scheduleAtFixedRate(
                 this::performTokenRefreshCheck,
                 tokenRefreshInterval.toMillis(),
                 tokenRefreshInterval.toMillis(),
@@ -734,7 +751,7 @@ public class AuthenticationManager {
             logger.info("Token auto-refresh enabled with interval: {}", tokenRefreshInterval);
             
         } catch (Exception e) {
-            errorReporter.logException("Error enabling token auto-refresh", e);
+            errorReporter.logException(e, "Error enabling token auto-refresh", null);
         }
     }
     
@@ -753,7 +770,7 @@ public class AuthenticationManager {
             logger.info("Token auto-refresh disabled");
             
         } catch (Exception e) {
-            errorReporter.logException("Error disabling token auto-refresh", e);
+            errorReporter.logException(e, "Error disabling token auto-refresh", null);
         }
     }
     
@@ -821,7 +838,7 @@ public class AuthenticationManager {
             return null;
             
         } catch (Exception e) {
-            errorReporter.logException("Error getting current token", e);
+            errorReporter.logException(e, "Error getting current token", null);
             return null;
         }
     }
@@ -849,7 +866,7 @@ public class AuthenticationManager {
             logger.debug("Token invalidated for authentication type: {}", authenticationType);
             
         } catch (Exception e) {
-            errorReporter.logException("Error invalidating token", e);
+            errorReporter.logException(e, "Error invalidating token", null);
         }
     }
     
@@ -869,7 +886,8 @@ public class AuthenticationManager {
      * @return true if configuration was applied successfully
      */
     public boolean configureAuthentication(AuthenticationConfiguration config) {
-        String correlationId = errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        errorReporter.setCorrelationId(UUID.randomUUID().toString());
+        String correlationId = errorReporter.getCorrelationId();
         
         try {
             logger.info("Configuring authentication for type: {} [{}]", 
@@ -928,7 +946,7 @@ public class AuthenticationManager {
             return true;
             
         } catch (Exception e) {
-            errorReporter.logException("Error configuring authentication", e);
+            errorReporter.logException(e, "Error configuring authentication", null);
             return false;
             
         } finally {
@@ -970,7 +988,7 @@ public class AuthenticationManager {
             metrics.put("memoryUsage", memoryManager.getComponentMemoryUsage().get("AuthenticationManager"));
             
         } catch (Exception e) {
-            errorReporter.logException("Error collecting security metrics", e);
+            errorReporter.logException(e, "Error collecting security metrics", null);
             metrics.put("error", e.getMessage());
         }
         
@@ -996,7 +1014,7 @@ public class AuthenticationManager {
             return Base64.getEncoder().encodeToString(encryptedBytes);
             
         } catch (Exception e) {
-            errorReporter.logException("Error encrypting credentials", e);
+            errorReporter.logException(e, "Error encrypting credentials", null);
             throw new SecurityException("Failed to encrypt credentials", e);
         }
     }
@@ -1022,7 +1040,7 @@ public class AuthenticationManager {
             return new String(decryptedBytes, "UTF-8");
             
         } catch (Exception e) {
-            errorReporter.logException("Error decrypting credentials", e);
+            errorReporter.logException(e, "Error decrypting credentials", null);
             securityViolationCount.incrementAndGet();
             throw new SecurityException("Failed to decrypt credentials", e);
         }
@@ -1065,7 +1083,7 @@ public class AuthenticationManager {
         this.credentialRotationEnabled = true;
         
         // Schedule new rotation task
-        credentialRotationTask = threadPoolManager.getApiThreadPool().scheduleAtFixedRate(
+        credentialRotationTask = tokenScheduler.scheduleAtFixedRate(
             this::performCredentialRotationCheck,
             rotationInterval.toMillis(),
             rotationInterval.toMillis(),
@@ -1134,7 +1152,7 @@ public class AuthenticationManager {
             return key;
             
         } catch (Exception e) {
-            errorReporter.logException("Error generating encryption key", e);
+            errorReporter.logException(e, "Error generating encryption key", null);
             throw new SecurityException("Failed to generate encryption key", e);
         }
     }
@@ -1577,12 +1595,14 @@ public class AuthenticationManager {
                     if (authType != null && supportsTokenRefresh(authType)) {
                         
                         // Submit async refresh task
-                        threadPoolManager.submitAsyncTask(() -> {
+                        threadPoolManager.submitAsyncTask(ModulePool.API, () -> {
                             try {
                                 AuthenticationConfiguration config = createRefreshConfiguration(authType);
                                 refreshToken(config);
+                                return null;
                             } catch (Exception e) {
                                 logger.warn("Automatic token refresh failed for type: {}", authType, e);
+                                return null;
                             }
                         });
                     }
@@ -1590,7 +1610,7 @@ public class AuthenticationManager {
             }
             
         } catch (Exception e) {
-            errorReporter.logException("Error during token refresh check", e);
+            errorReporter.logException(e, "Error during token refresh check", null);
         }
     }
     
@@ -1616,7 +1636,7 @@ public class AuthenticationManager {
             }
             
         } catch (Exception e) {
-            errorReporter.logException("Error during credential rotation check", e);
+            errorReporter.logException(e, "Error during credential rotation check", null);
         }
     }
     
@@ -2055,7 +2075,7 @@ class TokenInfo {
      */
     public boolean isExpiringSoon() {
         if (invalidated || expirationTime == null) return false;
-        return Instant.now().plus(TOKEN_EXPIRY_BUFFER).isAfter(expirationTime);
+        return Instant.now().plus(AuthenticationManager.TOKEN_EXPIRY_BUFFER).isAfter(expirationTime);
     }
     
     /**
