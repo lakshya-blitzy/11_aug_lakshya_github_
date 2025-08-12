@@ -1533,11 +1533,25 @@ class MockWebDriver implements WebDriver {
     
     private static class MockTimeouts implements Timeouts {
         @Override public Timeouts implicitlyWait(Duration duration) { return this; }
-        @Override public Timeouts setScriptTimeout(Duration duration) { return this; }
         @Override public Timeouts pageLoadTimeout(Duration duration) { return this; }
-        @Override public Timeouts pageLoadTimeout(long time, TimeUnit unit) { return this; }
-        @Override public Timeouts implicitlyWait(long time, TimeUnit unit) { return this; }
-        @Override public Timeouts setScriptTimeout(long time, TimeUnit unit) { return this; }
+        
+        // Deprecated methods - required to implement interface but should use Duration versions above
+        @SuppressWarnings("deprecation")
+        @Override public Timeouts pageLoadTimeout(long time, TimeUnit unit) { 
+            return pageLoadTimeout(Duration.of(time, unit.toChronoUnit())); 
+        }
+        
+        @SuppressWarnings("deprecation")
+        @Override public Timeouts implicitlyWait(long time, TimeUnit unit) { 
+            return implicitlyWait(Duration.of(time, unit.toChronoUnit())); 
+        }
+        
+        @SuppressWarnings("deprecation")
+        @Override public Timeouts setScriptTimeout(long time, TimeUnit unit) { 
+            return scriptTimeout(Duration.of(time, unit.toChronoUnit())); 
+        }
+        
+        @Override public Timeouts scriptTimeout(Duration duration) { return this; }
     }
     
     private static class MockWindow implements Window {
