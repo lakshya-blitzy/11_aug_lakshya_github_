@@ -1207,10 +1207,15 @@ public class WebDriverPool {
      */
     private void registerShutdownHook() {
         try {
-            shutdownHandler.registerShutdownCallback(new WebDriverPoolShutdownCallback());
-            logger.debug("Registered WebDriver pool shutdown callback");
+            // Register JVM shutdown hook directly for now
+            // TODO: Integrate with ShutdownHandler when interface is accessible
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                logger.info("Executing WebDriver pool shutdown hook");
+                shutdownPool();
+            }, "WebDriverPool-Shutdown"));
+            logger.debug("Registered WebDriver pool shutdown hook");
         } catch (Exception e) {
-            logger.warn("Failed to register shutdown callback", e);
+            logger.warn("Failed to register shutdown hook", e);
         }
     }
     
@@ -1393,34 +1398,7 @@ public class WebDriverPool {
     /**
      * Inner class for shutdown callback implementation.
      */
-    private class WebDriverPoolShutdownCallback implements com.automation.framework.core.ShutdownHandler.ShutdownCallback {
-        
-        @Override
-        public void execute() {
-            logger.info("Executing WebDriver pool shutdown callback");
-            shutdownPool();
-        }
-        
-        @Override
-        public int getPriority() {
-            return 100; // High priority for WebDriver cleanup
-        }
-        
-        @Override
-        public String getName() {
-            return "WebDriverPool-Shutdown";
-        }
-        
-        @Override
-        public long getTimeout() {
-            return 10000; // 10 seconds timeout
-        }
-        
-        @Override
-        public boolean canCancel() {
-            return false; // Cannot cancel WebDriver cleanup
-        }
-    }
+
 }
 
 /**
@@ -1530,6 +1508,7 @@ class MockWebDriver implements WebDriver {
         @Override public WebDriver defaultContent() { return null; }
         @Override public WebElement activeElement() { return null; }
         @Override public Alert alert() { return null; }
+        @Override public WebDriver newWindow(org.openqa.selenium.WindowType typeHint) { return null; }
     }
     
     private static class MockNavigation implements Navigation {
@@ -1556,6 +1535,9 @@ class MockWebDriver implements WebDriver {
         @Override public Timeouts implicitlyWait(Duration duration) { return this; }
         @Override public Timeouts setScriptTimeout(Duration duration) { return this; }
         @Override public Timeouts pageLoadTimeout(Duration duration) { return this; }
+        @Override public Timeouts pageLoadTimeout(long time, TimeUnit unit) { return this; }
+        @Override public Timeouts implicitlyWait(long time, TimeUnit unit) { return this; }
+        @Override public Timeouts setScriptTimeout(long time, TimeUnit unit) { return this; }
     }
     
     private static class MockWindow implements Window {
