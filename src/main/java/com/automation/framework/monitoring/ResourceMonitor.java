@@ -156,6 +156,7 @@ public class ResourceMonitor {
             var heapBaseline = memoryManager.getHeapUsageBaseline();
             var gcMetrics = memoryManager.getGCMetrics();
             var componentUsage = memoryManager.getComponentMemoryUsage();
+            var memoryTrends = memoryManager.getMemoryTrends();
             
             // Create comprehensive memory metrics
             Map<String, Object> memoryData = new HashMap<>();
@@ -163,6 +164,7 @@ public class ResourceMonitor {
             memoryData.put("heapBaseline", heapBaseline);
             memoryData.put("gcMetrics", gcMetrics);
             memoryData.put("componentUsage", componentUsage);
+            memoryData.put("memoryTrends", memoryTrends);
             memoryData.put("frameworkLimit", FRAMEWORK_MEMORY_LIMIT_BYTES);
             memoryData.put("utilizationPercentage", calculateMemoryUtilization());
             
@@ -852,6 +854,12 @@ public class ResourceMonitor {
      */
     private void loadConfiguration() {
         try {
+            // Load monitoring thresholds from ConfigurationManager
+            var metricsThresholds = configurationManager.getMetricsThresholds();
+            var performanceBaselines = configurationManager.getPerformanceBaselines();
+            var alertConfiguration = configurationManager.getAlertConfiguration();
+            var monitoringSettings = configurationManager.getMonitoringSettings();
+            
             this.monitoringIntervalMs = Long.parseLong(
                 configurationManager.getPropertyWithDefault("monitoring.interval.ms", 
                 String.valueOf(DEFAULT_MONITORING_INTERVAL_MS)));
