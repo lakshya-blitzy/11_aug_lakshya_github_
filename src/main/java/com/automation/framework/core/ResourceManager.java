@@ -183,7 +183,7 @@ public class ResourceManager {
                 
                 // Initiate graceful shutdown through ShutdownHandler
                 boolean gracefulShutdown = shutdownHandler.initiateGracefulShutdown().get(
-                    configuration.getCleanupTimeout(), TimeUnit.MILLISECONDS);
+                    configuration.getCleanupTimeout().toMillis(), TimeUnit.MILLISECONDS);
                 
                 if (!gracefulShutdown) {
                     logger.warn("Graceful shutdown failed, executing emergency shutdown");
@@ -862,7 +862,7 @@ public class ResourceManager {
     private void registerShutdownHooks() {
         try {
             // Register resource cleanup callback with shutdown handler
-            shutdownHandler.registerShutdownHook();
+            shutdownHandler.addShutdownHook();
             
             logger.debug("Shutdown hooks registered successfully");
             
@@ -932,9 +932,9 @@ public class ResourceManager {
             connectionPoolManager.detectConnectionLeaks();
             
             // Check for WebDriver session leaks
-            List<?> sessionLeaks = webDriverPool.getSessionLeaks();
-            if (!sessionLeaks.isEmpty()) {
-                logger.warn("Detected {} WebDriver session leaks", sessionLeaks.size());
+            int sessionLeaks = webDriverPool.getSessionLeaks();
+            if (sessionLeaks > 0) {
+                logger.warn("Detected {} WebDriver session leaks", sessionLeaks);
             }
             
         } catch (Exception e) {
@@ -948,7 +948,7 @@ public class ResourceManager {
     private int getResourceLeakCount() {
         try {
             int connectionLeaks = connectionPoolManager.getConnectionLeaks().size();
-            int sessionLeaks = webDriverPool.getSessionLeaks().size();
+            int sessionLeaks = webDriverPool.getSessionLeaks();
             return connectionLeaks + sessionLeaks;
             
         } catch (Exception e) {
@@ -992,7 +992,7 @@ public class ResourceManager {
  * system resources, providing detailed health information for monitoring and alerting.
  * It maintains real-time health scores and identifies unhealthy resources for remediation.
  */
-public class ResourceHealth {
+class ResourceHealth {
     
     private static final Logger logger = LoggerFactory.getLogger(ResourceHealth.class);
     
@@ -1178,7 +1178,7 @@ public class ResourceHealth {
  * resource utilization, throughput metrics, and resource lifecycle information.
  * It supports metrics export for integration with monitoring systems.
  */
-public class ResourceMetrics {
+class ResourceMetrics {
     
     private static final Logger logger = LoggerFactory.getLogger(ResourceMetrics.class);
     
@@ -1368,7 +1368,7 @@ public class ResourceMetrics {
  * This enum provides standardized status values for tracking resource health
  * and operational states throughout the resource lifecycle.
  */
-public enum ResourceStatus {
+enum ResourceStatus {
     /**
      * Resource is currently being initialized and not yet ready for use.
      */
@@ -1416,7 +1416,7 @@ public enum ResourceStatus {
  * This enum provides classification for different types of resources managed
  * by the ResourceManager for tracking, monitoring, and lifecycle management.
  */
-public enum ResourceType {
+enum ResourceType {
     /**
      * HTTP connection pool resources for API testing and communication.
      */
@@ -1465,7 +1465,7 @@ public enum ResourceType {
  * monitoring intervals, timeout values, throttling settings, and resource limits.
  * It supports validation and serialization for persistence and external configuration.
  */
-public class ResourceConfiguration {
+class ResourceConfiguration {
     
     private static final Logger logger = LoggerFactory.getLogger(ResourceConfiguration.class);
     
