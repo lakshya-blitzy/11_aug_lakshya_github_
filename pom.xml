@@ -5,38 +5,41 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.automation</groupId>
-    <artifactId>automation-framework</artifactId>
+    <!-- Project Coordinates -->
+    <groupId>com.automation.framework</groupId>
+    <artifactId>java-automation-framework</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
     <name>Java Automation Framework</name>
-    <description>Enterprise-grade automation framework with comprehensive error handling, resource management, and HTTP processing mechanisms</description>
+    <description>Enterprise-grade automation framework with comprehensive error handling, resource management, and HTTP processing capabilities for web and API testing</description>
 
+    <!-- Java 11 LTS and Maven Properties -->
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <!-- Java Version Configuration -->
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         
-        <!-- Core Framework Versions -->
-        <testng.version>7.8.0</testng.version>
+        <!-- Core Testing Framework Versions -->
         <selenium.version>4.15.0</selenium.version>
+        <testng.version>7.8.0</testng.version>
         <rest-assured.version>5.4.0</rest-assured.version>
+        
+        <!-- Supporting Libraries Versions -->
         <jackson.version>2.15.2</jackson.version>
         <slf4j.version>2.0.9</slf4j.version>
-        
-        <!-- Supporting Library Versions -->
         <httpclient.version>4.5.14</httpclient.version>
         <micrometer.version>1.12.0</micrometer.version>
         <poi.version>5.2.4</poi.version>
         <commons-csv.version>1.10.0</commons-csv.version>
         <json-schema-validator.version>1.0.87</json-schema-validator.version>
+        <swagger-parser.version>2.1.17</swagger-parser.version>
         <java-jwt.version>4.4.0</java-jwt.version>
         <oauth2-oidc-sdk.version>11.9.1</oauth2-oidc-sdk.version>
-        <swagger-parser.version>2.1.17</swagger-parser.version>
-        <commons-text.version>1.11.0</commons-text.version>
+        <apache-commons-text.version>1.11.0</apache-commons-text.version>
         
-        <!-- Build Plugin Versions -->
+        <!-- Maven Plugin Versions -->
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.1.2</maven-surefire-plugin.version>
         <maven-failsafe-plugin.version>3.1.2</maven-failsafe-plugin.version>
@@ -49,22 +52,22 @@
             <artifactId>testng</artifactId>
             <version>${testng.version}</version>
         </dependency>
-        
-        <!-- Selenium WebDriver -->
+
+        <!-- Selenium WebDriver for Web Automation -->
         <dependency>
             <groupId>org.seleniumhq.selenium</groupId>
             <artifactId>selenium-java</artifactId>
             <version>${selenium.version}</version>
         </dependency>
-        
-        <!-- REST Assured -->
+
+        <!-- REST Assured for API Testing -->
         <dependency>
             <groupId>io.rest-assured</groupId>
             <artifactId>rest-assured</artifactId>
             <version>${rest-assured.version}</version>
         </dependency>
-        
-        <!-- JSON Processing -->
+
+        <!-- Jackson for JSON Processing -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -76,35 +79,29 @@
             <artifactId>jackson-core</artifactId>
             <version>${jackson.version}</version>
         </dependency>
-        
-        <!-- Logging -->
+
+        <!-- SLF4J Logging Framework -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
         </dependency>
-        
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>1.4.14</version>
-        </dependency>
-        
-        <!-- HTTP Client -->
+
+        <!-- HTTP Client for Connection Pool Management -->
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpclient</artifactId>
             <version>${httpclient.version}</version>
         </dependency>
-        
-        <!-- Metrics -->
+
+        <!-- Micrometer for Metrics Collection -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
             <version>${micrometer.version}</version>
         </dependency>
-        
-        <!-- Excel Processing -->
+
+        <!-- Apache POI for Excel File Operations -->
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi</artifactId>
@@ -116,83 +113,150 @@
             <artifactId>poi-ooxml</artifactId>
             <version>${poi.version}</version>
         </dependency>
-        
-        <!-- CSV Processing -->
+
+        <!-- Commons CSV for CSV File Processing -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-csv</artifactId>
             <version>${commons-csv.version}</version>
         </dependency>
-        
-        <!-- JSON Schema Validation -->
+
+        <!-- JSON Schema Validator -->
         <dependency>
             <groupId>com.networknt</groupId>
             <artifactId>json-schema-validator</artifactId>
             <version>${json-schema-validator.version}</version>
         </dependency>
-        
-        <!-- JWT Support -->
-        <dependency>
-            <groupId>com.auth0</groupId>
-            <artifactId>java-jwt</artifactId>
-            <version>${java-jwt.version}</version>
-        </dependency>
-        
-        <!-- OAuth2 Support -->
-        <dependency>
-            <groupId>com.nimbusds</groupId>
-            <artifactId>oauth2-oidc-sdk</artifactId>
-            <version>${oauth2-oidc-sdk.version}</version>
-        </dependency>
-        
-        <!-- Swagger/OpenAPI Support -->
+
+        <!-- Swagger Parser for OpenAPI Schema Support -->
         <dependency>
             <groupId>io.swagger.parser.v3</groupId>
             <artifactId>swagger-parser</artifactId>
             <version>${swagger-parser.version}</version>
         </dependency>
-        
-        <!-- String Utilities -->
+
+        <!-- JWT Library for Authentication -->
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+            <version>${java-jwt.version}</version>
+        </dependency>
+
+        <!-- OAuth2 OIDC SDK for Authentication -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>oauth2-oidc-sdk</artifactId>
+            <version>${oauth2-oidc-sdk.version}</version>
+        </dependency>
+
+        <!-- Apache Commons Text for String Escaping -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-text</artifactId>
-            <version>${commons-text.version}</version>
+            <version>${apache-commons-text.version}</version>
+        </dependency>
+
+        <!-- SLF4J Simple Logger Implementation for Testing -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
     <build>
+        <sourceDirectory>src/main/java</sourceDirectory>
+        <testSourceDirectory>src/test/java</testSourceDirectory>
+        
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+        
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>true</filtering>
+            </testResource>
+        </testResources>
+
         <plugins>
-            <!-- Compiler Plugin -->
+            <!-- Maven Compiler Plugin for Java 11 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven-compiler-plugin.version}</version>
                 <configuration>
-                    <source>17</source>
-                    <target>17</target>
+                    <source>11</source>
+                    <target>11</target>
                     <encoding>UTF-8</encoding>
+                    <showWarnings>true</showWarnings>
+                    <showDeprecation>true</showDeprecation>
                 </configuration>
             </plugin>
-            
-            <!-- Surefire Plugin for Unit Tests -->
+
+            <!-- Maven Surefire Plugin for TestNG Test Execution -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven-surefire-plugin.version}</version>
                 <configuration>
+                    <!-- TestNG Configuration -->
                     <suiteXmlFiles>
                         <suiteXmlFile>src/test/resources/testng.xml</suiteXmlFile>
                     </suiteXmlFiles>
+                    
+                    <!-- Parallel Execution Configuration -->
                     <parallel>methods</parallel>
                     <threadCount>10</threadCount>
+                    <useUnlimitedThreads>false</useUnlimitedThreads>
+                    
+                    <!-- Memory Configuration for 2GB Framework Limit -->
+                    <argLine>-Xmx1536m -Xms512m</argLine>
+                    
+                    <!-- Reporting Configuration -->
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                    </includes>
+                    
+                    <!-- Test Failure Configuration -->
+                    <testFailureIgnore>false</testFailureIgnore>
+                    <skipTests>false</skipTests>
+                    
+                    <!-- System Properties for Framework Configuration -->
+                    <systemPropertyVariables>
+                        <selenium.webdriver.timeout>3000</selenium.webdriver.timeout>
+                        <api.response.timeout>2000</api.response.timeout>
+                        <framework.initialization.timeout>5000</framework.initialization.timeout>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
-            
-            <!-- Failsafe Plugin for Integration Tests -->
+
+            <!-- Maven Failsafe Plugin for Integration Tests -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>${maven-failsafe-plugin.version}</version>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                        <include>**/*IntegrationTest.java</include>
+                    </includes>
+                    
+                    <!-- Memory Configuration -->
+                    <argLine>-Xmx1536m -Xms512m</argLine>
+                    
+                    <!-- System Properties for Integration Testing -->
+                    <systemPropertyVariables>
+                        <selenium.grid.enabled>false</selenium.grid.enabled>
+                        <api.base.url>http://localhost:8080</api.base.url>
+                    </systemPropertyVariables>
+                </configuration>
+                
                 <executions>
                     <execution>
                         <goals>
@@ -205,25 +269,37 @@
         </plugins>
     </build>
 
+    <!-- Profiles for Different Execution Environments -->
     <profiles>
-        <!-- Profile for strict compilation (warnings as errors) -->
+        <!-- Development Profile -->
         <profile>
-            <id>strict</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-compiler-plugin</artifactId>
-                        <configuration>
-                            <compilerArgs>
-                                <arg>-Werror</arg>
-                                <arg>-Xlint:all</arg>
-                            </compilerArgs>
-                            <failOnWarning>true</failOnWarning>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
+            <id>dev</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <browser.headless>false</browser.headless>
+                <test.parallel.enabled>false</test.parallel.enabled>
+            </properties>
+        </profile>
+
+        <!-- CI/CD Pipeline Profile -->
+        <profile>
+            <id>ci</id>
+            <properties>
+                <browser.headless>true</browser.headless>
+                <test.parallel.enabled>true</test.parallel.enabled>
+            </properties>
+        </profile>
+
+        <!-- Performance Testing Profile -->
+        <profile>
+            <id>performance</id>
+            <properties>
+                <api.concurrent.threads>50</api.concurrent.threads>
+                <browser.concurrent.sessions>10</browser.concurrent.sessions>
+            </properties>
         </profile>
     </profiles>
+
 </project>
