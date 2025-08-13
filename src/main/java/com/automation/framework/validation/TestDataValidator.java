@@ -95,7 +95,7 @@ import java.time.Duration;
  * Validation Modes:
  * - FAIL_FAST: Stop validation on first error for quick feedback during development
  * - COLLECT_ALL_ERRORS: Collect all validation errors for comprehensive reporting
- * - WARNING_ONLY: Report validation issues as warnings without failing tests
+ * - LENIENT: Report validation issues as warnings without failing tests
  * 
  * Performance Requirements:
  * - Test data validation response time: <200ms for cached data, <1s for fresh validation
@@ -138,7 +138,7 @@ public class TestDataValidator {
     private volatile long cacheTtlMs = 3600000; // 1 hour
     
     // Test data validation cache with performance optimization
-    private final ConcurrentHashMap<String, CachedValidationResult> validationCache;
+    private final ConcurrentHashMap<String, CachedTestDataValidationResult> validationCache;
     
     // Custom validation rules for business logic constraints
     private final Map<String, ValidationRule> customValidationRules;
@@ -201,9 +201,9 @@ public class TestDataValidator {
      * 
      * @param testData Test data object to validate (Map, List, or custom object)
      * @param validationConfig Configuration parameters for validation behavior
-     * @return ValidationResult containing validation status, errors, warnings, and performance metrics
+     * @return TestDataValidationResult containing validation status, errors, warnings, and performance metrics
      */
-    public ValidationResult validateTestData(Object testData, Map<String, Object> validationConfig) {
+    public TestDataValidationResult validateTestData(Object testData, Map<String, Object> validationConfig) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -217,7 +217,7 @@ public class TestDataValidator {
             
             // Check cache if enabled
             if (cacheEnabled) {
-                ValidationResult cachedResult = getCachedValidationResult(cacheKey);
+                TestDataValidationResult cachedResult = getCachedValidationResult(cacheKey);
                 if (cachedResult != null) {
                     cacheHits++;
                     logger.debug("Validation cache hit for test data validation");
@@ -226,7 +226,7 @@ public class TestDataValidator {
             }
             
             // Perform comprehensive test data validation
-            ValidationResult result = performTestDataValidation(testData, validationConfig, startTime);
+            TestDataValidationResult result = performTestDataValidation(testData, validationConfig, startTime);
             
             // Cache validation result if enabled
             if (cacheEnabled && result != null) {
@@ -260,9 +260,9 @@ public class TestDataValidator {
      * 
      * @param filePath Path to the test data file to validate
      * @param dataType Expected data type of the file (CSV, JSON, XML, EXCEL, PROPERTIES, YAML)
-     * @return ValidationResult containing file validation status and detailed error information
+     * @return TestDataValidationResult containing file validation status and detailed error information
      */
-    public ValidationResult validateDataFile(String filePath, TestDataType dataType) {
+    public TestDataValidationResult validateDataFile(String filePath, TestDataType dataType) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -278,7 +278,7 @@ public class TestDataValidator {
             
             // Check cache if enabled
             if (cacheEnabled) {
-                ValidationResult cachedResult = getCachedValidationResult(cacheKey);
+                TestDataValidationResult cachedResult = getCachedValidationResult(cacheKey);
                 if (cachedResult != null) {
                     cacheHits++;
                     logger.debug("Validation cache hit for file: {}", filePath);
@@ -303,7 +303,7 @@ public class TestDataValidator {
             Map<String, Object> fileMetadata = fileResourceHandler.getFileMetadata(dataFilePath);
             
             // Perform format-specific validation
-            ValidationResult result = validateDataFileByType(dataFilePath, dataType, fileMetadata, startTime);
+            TestDataValidationResult result = validateDataFileByType(dataFilePath, dataType, fileMetadata, startTime);
             
             // Cache validation result if enabled
             if (cacheEnabled && result != null) {
@@ -338,9 +338,9 @@ public class TestDataValidator {
      * 
      * @param dataProviderMethod Method annotated with @DataProvider to validate
      * @param expectedParameterCount Expected number of parameters per test case
-     * @return ValidationResult containing DataProvider validation status and parameter validation
+     * @return TestDataValidationResult containing DataProvider validation status and parameter validation
      */
-    public ValidationResult validateDataProvider(java.lang.reflect.Method dataProviderMethod, int expectedParameterCount) {
+    public TestDataValidationResult validateDataProvider(java.lang.reflect.Method dataProviderMethod, int expectedParameterCount) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -355,7 +355,7 @@ public class TestDataValidator {
                 return createErrorResult("Method is not annotated with @DataProvider: " + dataProviderMethod.getName(), startTime);
             }
             
-            ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+            TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
             
             // Validate DataProvider method signature
             Class<?> returnType = dataProviderMethod.getReturnType();
@@ -377,12 +377,12 @@ public class TestDataValidator {
                 Object result = dataProviderMethod.invoke(null);
                 if (result instanceof Object[][]) {
                     Object[][] testData = (Object[][]) result;
-                    ValidationResult dataValidation = validateDataProviderArray(testData, expectedParameterCount);
+                    TestDataValidationResult dataValidation = validateDataProviderArray(testData, expectedParameterCount);
                     resultBuilder.mergeResult(dataValidation);
                 } else if (result instanceof java.util.Iterator) {
                     @SuppressWarnings("unchecked")
                     java.util.Iterator<Object[]> iterator = (java.util.Iterator<Object[]>) result;
-                    ValidationResult dataValidation = validateDataProviderIterator(iterator, expectedParameterCount);
+                    TestDataValidationResult dataValidation = validateDataProviderIterator(iterator, expectedParameterCount);
                     resultBuilder.mergeResult(dataValidation);
                 }
             } catch (Exception e) {
@@ -395,7 +395,7 @@ public class TestDataValidator {
                 resultBuilder.addWarning("DataProvider name is not specified, using method name: " + dataProviderMethod.getName());
             }
             
-            ValidationResult finalResult = resultBuilder.build(startTime);
+            TestDataValidationResult finalResult = resultBuilder.build(startTime);
             
             long validationTime = System.currentTimeMillis() - startTime;
             logger.debug("DataProvider validation completed in {}ms for {}, valid: {}, errors: {}", 
@@ -425,9 +425,9 @@ public class TestDataValidator {
      * 
      * @param testData Test data object containing fields to validate
      * @param expectedDataTypes Map of field names to expected data types
-     * @return ValidationResult containing data type validation status and type mismatch errors
+     * @return TestDataValidationResult containing data type validation status and type mismatch errors
      */
-    public ValidationResult validateDataTypes(Object testData, Map<String, Class<?>> expectedDataTypes) {
+    public TestDataValidationResult validateDataTypes(Object testData, Map<String, Class<?>> expectedDataTypes) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -440,7 +440,7 @@ public class TestDataValidator {
                 return createErrorResult("Expected data types map cannot be null or empty", startTime);
             }
             
-            ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+            TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
             
             // Convert test data to map for field access
             Map<String, Object> dataMap = convertToDataMap(testData);
@@ -463,11 +463,11 @@ public class TestDataValidator {
                 }
                 
                 // Perform type validation
-                ValidationResult fieldValidation = validateFieldType(fieldName, fieldValue, expectedType);
+                TestDataValidationResult fieldValidation = validateFieldType(fieldName, fieldValue, expectedType);
                 resultBuilder.mergeResult(fieldValidation);
             }
             
-            ValidationResult finalResult = resultBuilder.build(startTime);
+            TestDataValidationResult finalResult = resultBuilder.build(startTime);
             
             long validationTime = System.currentTimeMillis() - startTime;
             logger.debug("Data types validation completed in {}ms, valid: {}, errors: {}", 
@@ -497,9 +497,9 @@ public class TestDataValidator {
      * 
      * @param testData Test data object containing fields to validate
      * @param formatConstraints Map of field names to format validation constraints
-     * @return ValidationResult containing format validation status and pattern mismatch errors
+     * @return TestDataValidationResult containing format validation status and pattern mismatch errors
      */
-    public ValidationResult validateDataFormat(Object testData, Map<String, FormatConstraint> formatConstraints) {
+    public TestDataValidationResult validateDataFormat(Object testData, Map<String, FormatConstraint> formatConstraints) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -512,7 +512,7 @@ public class TestDataValidator {
                 return createErrorResult("Format constraints map cannot be null or empty", startTime);
             }
             
-            ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+            TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
             
             // Convert test data to map for field access
             Map<String, Object> dataMap = convertToDataMap(testData);
@@ -539,11 +539,11 @@ public class TestDataValidator {
                 }
                 
                 // Perform format validation
-                ValidationResult formatValidation = validateFieldFormat(fieldName, fieldValue, constraint);
+                TestDataValidationResult formatValidation = validateFieldFormat(fieldName, fieldValue, constraint);
                 resultBuilder.mergeResult(formatValidation);
             }
             
-            ValidationResult finalResult = resultBuilder.build(startTime);
+            TestDataValidationResult finalResult = resultBuilder.build(startTime);
             
             long validationTime = System.currentTimeMillis() - startTime;
             logger.debug("Data format validation completed in {}ms, valid: {}, errors: {}", 
@@ -573,9 +573,9 @@ public class TestDataValidator {
      * 
      * @param testData Test data object containing numeric fields to validate
      * @param boundaryConstraints Map of field names to boundary validation constraints
-     * @return ValidationResult containing boundary validation status and range violation errors
+     * @return TestDataValidationResult containing boundary validation status and range violation errors
      */
-    public ValidationResult validateBoundaryValues(Object testData, Map<String, BoundaryConstraint> boundaryConstraints) {
+    public TestDataValidationResult validateBoundaryValues(Object testData, Map<String, BoundaryConstraint> boundaryConstraints) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -588,7 +588,7 @@ public class TestDataValidator {
                 return createErrorResult("Boundary constraints map cannot be null or empty", startTime);
             }
             
-            ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+            TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
             
             // Convert test data to map for field access
             Map<String, Object> dataMap = convertToDataMap(testData);
@@ -615,11 +615,11 @@ public class TestDataValidator {
                 }
                 
                 // Perform boundary validation
-                ValidationResult boundaryValidation = validateFieldBoundary(fieldName, fieldValue, constraint);
+                TestDataValidationResult boundaryValidation = validateFieldBoundary(fieldName, fieldValue, constraint);
                 resultBuilder.mergeResult(boundaryValidation);
             }
             
-            ValidationResult finalResult = resultBuilder.build(startTime);
+            TestDataValidationResult finalResult = resultBuilder.build(startTime);
             
             long validationTime = System.currentTimeMillis() - startTime;
             logger.debug("Boundary values validation completed in {}ms, valid: {}, errors: {}", 
@@ -650,9 +650,9 @@ public class TestDataValidator {
      * @param testData Primary test data object to validate
      * @param relatedData Map of related datasets for referential integrity checking
      * @param integrityRules Map of field names to referential integrity validation rules
-     * @return ValidationResult containing integrity validation status and reference violation errors
+     * @return TestDataValidationResult containing integrity validation status and reference violation errors
      */
-    public ValidationResult validateReferentialIntegrity(Object testData, Map<String, Object> relatedData, 
+    public TestDataValidationResult validateReferentialIntegrity(Object testData, Map<String, Object> relatedData, 
                                                         Map<String, IntegrityRule> integrityRules) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
@@ -666,7 +666,7 @@ public class TestDataValidator {
                 return createErrorResult("Integrity rules map cannot be null or empty", startTime);
             }
             
-            ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+            TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
             
             // Convert test data to map for field access
             Map<String, Object> dataMap = convertToDataMap(testData);
@@ -693,11 +693,11 @@ public class TestDataValidator {
                 }
                 
                 // Perform referential integrity validation
-                ValidationResult integrityValidation = validateFieldIntegrity(fieldName, fieldValue, rule, relatedData);
+                TestDataValidationResult integrityValidation = validateFieldIntegrity(fieldName, fieldValue, rule, relatedData);
                 resultBuilder.mergeResult(integrityValidation);
             }
             
-            ValidationResult finalResult = resultBuilder.build(startTime);
+            TestDataValidationResult finalResult = resultBuilder.build(startTime);
             
             long validationTime = System.currentTimeMillis() - startTime;
             logger.debug("Referential integrity validation completed in {}ms, valid: {}, errors: {}", 
@@ -728,9 +728,9 @@ public class TestDataValidator {
      * 
      * @param testData Test data object to validate against custom rules
      * @param ruleName Name of the custom validation rule to apply
-     * @return ValidationResult containing custom rule validation status and business rule violation errors
+     * @return TestDataValidationResult containing custom rule validation status and business rule violation errors
      */
-    public ValidationResult validateCustomRules(Object testData, String ruleName) {
+    public TestDataValidationResult validateCustomRules(Object testData, String ruleName) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -748,7 +748,7 @@ public class TestDataValidator {
                 return createErrorResult("Custom validation rule not found: " + ruleName, startTime);
             }
             
-            ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+            TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
             
             // Check if rule is applicable to the test data
             if (!customRule.isApplicable(testData)) {
@@ -766,7 +766,7 @@ public class TestDataValidator {
                 resultBuilder.addError("Custom validation rule execution failed: " + e.getMessage());
             }
             
-            ValidationResult finalResult = resultBuilder.build(startTime);
+            TestDataValidationResult finalResult = resultBuilder.build(startTime);
             
             long validationTime = System.currentTimeMillis() - startTime;
             logger.debug("Custom rules validation completed in {}ms for rule {}, valid: {}, errors: {}", 
@@ -858,15 +858,15 @@ public class TestDataValidator {
      * Returns previously validated results if available and not expired.
      * 
      * @param cacheKey Unique key identifying the validation operation and data
-     * @return ValidationResult from cache, null if not found or expired
+     * @return TestDataValidationResult from cache, null if not found or expired
      */
-    public ValidationResult getCachedValidationResult(String cacheKey) {
+    public TestDataValidationResult getCachedValidationResult(String cacheKey) {
         try {
             if (!cacheEnabled || cacheKey == null || cacheKey.trim().isEmpty()) {
                 return null;
             }
             
-            CachedValidationResult cachedResult = validationCache.get(cacheKey);
+            CachedTestDataValidationResult cachedResult = validationCache.get(cacheKey);
             if (cachedResult == null) {
                 return null;
             }
@@ -980,7 +980,7 @@ public class TestDataValidator {
      * Sets validation mode for controlling validation behavior and error handling.
      * Configures fail-fast, error collection, or warning-only validation modes.
      * 
-     * @param mode ValidationMode to set (FAIL_FAST, COLLECT_ALL_ERRORS, WARNING_ONLY)
+     * @param mode ValidationMode to set (FAIL_FAST, COLLECT_ALL_ERRORS, LENIENT)
      */
     public void setValidationMode(ValidationMode mode) {
         try {
@@ -1208,7 +1208,7 @@ public class TestDataValidator {
     /**
      * Caches validation result with TTL management.
      */
-    private void cacheValidationResult(String cacheKey, ValidationResult result) {
+    private void cacheValidationResult(String cacheKey, TestDataValidationResult result) {
         try {
             if (!cacheEnabled || cacheKey == null || result == null) {
                 return;
@@ -1220,7 +1220,7 @@ public class TestDataValidator {
             }
             
             Instant expiryTime = Instant.now().plusMillis(cacheTtlMs);
-            CachedValidationResult cachedResult = new CachedValidationResult(result, expiryTime);
+            CachedTestDataValidationResult cachedResult = new CachedTestDataValidationResult(result, expiryTime);
             validationCache.put(cacheKey, cachedResult);
             
         } catch (Exception e) {
@@ -1249,13 +1249,13 @@ public class TestDataValidator {
     /**
      * Creates error validation result.
      */
-    private ValidationResult createErrorResult(String errorMessage, long startTime) {
+    private TestDataValidationResult createErrorResult(String errorMessage, long startTime) {
         long validationTime = System.currentTimeMillis() - startTime;
         
         List<String> errors = new ArrayList<>();
         errors.add(errorMessage);
         
-        return new ValidationResult(
+        return new TestDataValidationResult(
             false,
             errors,
             new ArrayList<>(), // warnings
@@ -1271,8 +1271,8 @@ public class TestDataValidator {
     /**
      * Performs comprehensive test data validation.
      */
-    private ValidationResult performTestDataValidation(Object testData, Map<String, Object> validationConfig, long startTime) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult performTestDataValidation(Object testData, Map<String, Object> validationConfig, long startTime) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try {
             // Convert test data to map for processing
@@ -1299,7 +1299,7 @@ public class TestDataValidator {
             if (validationConfig != null && validationConfig.containsKey("dataTypes")) {
                 @SuppressWarnings("unchecked")
                 Map<String, Class<?>> dataTypes = (Map<String, Class<?>>) validationConfig.get("dataTypes");
-                ValidationResult typeValidation = validateDataTypes(testData, dataTypes);
+                TestDataValidationResult typeValidation = validateDataTypes(testData, dataTypes);
                 resultBuilder.mergeResult(typeValidation);
             }
             
@@ -1321,39 +1321,39 @@ public class TestDataValidator {
     /**
      * Validates data file by type.
      */
-    private ValidationResult validateDataFileByType(Path filePath, TestDataType dataType, 
+    private TestDataValidationResult validateDataFileByType(Path filePath, TestDataType dataType, 
                                                    Map<String, Object> fileMetadata, long startTime) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try {
             switch (dataType) {
                 case CSV:
-                    ValidationResult csvResult = validateCsvFile(filePath);
+                    TestDataValidationResult csvResult = validateCsvFile(filePath);
                     resultBuilder.mergeResult(csvResult);
                     break;
                     
                 case JSON:
-                    ValidationResult jsonResult = validateJsonFile(filePath);
+                    TestDataValidationResult jsonResult = validateJsonFile(filePath);
                     resultBuilder.mergeResult(jsonResult);
                     break;
                     
                 case XML:
-                    ValidationResult xmlResult = validateXmlFile(filePath);
+                    TestDataValidationResult xmlResult = validateXmlFile(filePath);
                     resultBuilder.mergeResult(xmlResult);
                     break;
                     
                 case EXCEL:
-                    ValidationResult excelResult = validateExcelFile(filePath);
+                    TestDataValidationResult excelResult = validateExcelFile(filePath);
                     resultBuilder.mergeResult(excelResult);
                     break;
                     
                 case PROPERTIES:
-                    ValidationResult propertiesResult = validatePropertiesFile(filePath);
+                    TestDataValidationResult propertiesResult = validatePropertiesFile(filePath);
                     resultBuilder.mergeResult(propertiesResult);
                     break;
                     
                 case YAML:
-                    ValidationResult yamlResult = validateYamlFile(filePath);
+                    TestDataValidationResult yamlResult = validateYamlFile(filePath);
                     resultBuilder.mergeResult(yamlResult);
                     break;
                     
@@ -1372,15 +1372,15 @@ public class TestDataValidator {
     /**
      * Validates CSV file format and content.
      */
-    private ValidationResult validateCsvFile(Path filePath) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateCsvFile(Path filePath) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try (Reader reader = Files.newBufferedReader(filePath)) {
             CSVFormat csvFormat = CSVFormat.DEFAULT.withFirstRecordAsHeader();
             CSVParser parser = csvFormat.parse(reader);
             
             int recordCount = 0;
-            Set<String> headers = parser.getHeaderNames();
+            Set<String> headers = new HashSet<>(parser.getHeaderNames());
             
             if (headers.isEmpty()) {
                 resultBuilder.addWarning("CSV file has no headers");
@@ -1418,8 +1418,8 @@ public class TestDataValidator {
     /**
      * Validates JSON file format and structure.
      */
-    private ValidationResult validateJsonFile(Path filePath) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateJsonFile(Path filePath) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try {
             String jsonContent = Files.readString(filePath);
@@ -1452,8 +1452,8 @@ public class TestDataValidator {
     /**
      * Validates XML file format and structure.
      */
-    private ValidationResult validateXmlFile(Path filePath) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateXmlFile(Path filePath) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try {
             String xmlContent = Files.readString(filePath);
@@ -1480,8 +1480,8 @@ public class TestDataValidator {
     /**
      * Validates Excel file format and content.
      */
-    private ValidationResult validateExcelFile(Path filePath) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateExcelFile(Path filePath) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try (InputStream is = Files.newInputStream(filePath)) {
             Workbook workbook = WorkbookFactory.create(is);
@@ -1551,8 +1551,8 @@ public class TestDataValidator {
     /**
      * Validates Properties file format and content.
      */
-    private ValidationResult validatePropertiesFile(Path filePath) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validatePropertiesFile(Path filePath) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try (InputStream is = Files.newInputStream(filePath)) {
             java.util.Properties properties = new java.util.Properties();
@@ -1580,8 +1580,8 @@ public class TestDataValidator {
     /**
      * Validates YAML file format and structure.
      */
-    private ValidationResult validateYamlFile(Path filePath) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateYamlFile(Path filePath) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try {
             String yamlContent = Files.readString(filePath);
@@ -1607,8 +1607,8 @@ public class TestDataValidator {
     /**
      * Validates DataProvider array data.
      */
-    private ValidationResult validateDataProviderArray(Object[][] testData, int expectedParameterCount) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateDataProviderArray(Object[][] testData, int expectedParameterCount) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         if (testData == null || testData.length == 0) {
             resultBuilder.addError("DataProvider array is null or empty");
@@ -1634,8 +1634,8 @@ public class TestDataValidator {
     /**
      * Validates DataProvider iterator data.
      */
-    private ValidationResult validateDataProviderIterator(java.util.Iterator<Object[]> iterator, int expectedParameterCount) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateDataProviderIterator(java.util.Iterator<Object[]> iterator, int expectedParameterCount) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         if (iterator == null) {
             resultBuilder.addError("DataProvider iterator is null");
@@ -1685,8 +1685,8 @@ public class TestDataValidator {
     /**
      * Validates field type.
      */
-    private ValidationResult validateFieldType(String fieldName, Object fieldValue, Class<?> expectedType) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateFieldType(String fieldName, Object fieldValue, Class<?> expectedType) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         if (fieldValue == null) {
             return resultBuilder.build(System.currentTimeMillis());
@@ -1735,8 +1735,8 @@ public class TestDataValidator {
     /**
      * Validates field format.
      */
-    private ValidationResult validateFieldFormat(String fieldName, Object fieldValue, FormatConstraint constraint) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateFieldFormat(String fieldName, Object fieldValue, FormatConstraint constraint) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         if (fieldValue == null) {
             return resultBuilder.build(System.currentTimeMillis());
@@ -1779,8 +1779,8 @@ public class TestDataValidator {
     /**
      * Validates field boundary constraints.
      */
-    private ValidationResult validateFieldBoundary(String fieldName, Object fieldValue, BoundaryConstraint constraint) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+    private TestDataValidationResult validateFieldBoundary(String fieldName, Object fieldValue, BoundaryConstraint constraint) {
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         if (fieldValue == null) {
             return resultBuilder.build(System.currentTimeMillis());
@@ -1827,9 +1827,9 @@ public class TestDataValidator {
     /**
      * Validates field referential integrity.
      */
-    private ValidationResult validateFieldIntegrity(String fieldName, Object fieldValue, IntegrityRule rule, 
+    private TestDataValidationResult validateFieldIntegrity(String fieldName, Object fieldValue, IntegrityRule rule, 
                                                    Map<String, Object> relatedData) {
-        ValidationResult.Builder resultBuilder = new ValidationResult.Builder();
+        TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         if (fieldValue == null || relatedData == null) {
             return resultBuilder.build(System.currentTimeMillis());
@@ -1991,22 +1991,22 @@ public class TestDataValidator {
 }
 
 /**
- * CachedValidationResult represents a cached validation result with expiration and metadata.
+ * CachedTestDataValidationResult represents a cached validation result with expiration and metadata.
  * Supports TTL-based cache management and validation result classification.
  */
-class CachedValidationResult {
+class CachedTestDataValidationResult {
     
-    private final ValidationResult validationResult;
+    private final TestDataValidationResult validationResult;
     private final Instant creationTime;
     private final Instant expiryTime;
     
     /**
-     * Creates a new CachedValidationResult instance.
+     * Creates a new CachedTestDataValidationResult instance.
      * 
      * @param validationResult The cached validation result
      * @param expiryTime Time when the cache entry expires
      */
-    public CachedValidationResult(ValidationResult validationResult, Instant expiryTime) {
+    public CachedTestDataValidationResult(TestDataValidationResult validationResult, Instant expiryTime) {
         this.validationResult = validationResult;
         this.creationTime = Instant.now();
         this.expiryTime = expiryTime;
@@ -2017,7 +2017,7 @@ class CachedValidationResult {
      * 
      * @return The cached validation result
      */
-    public ValidationResult getValidationResult() {
+    public TestDataValidationResult getValidationResult() {
         return validationResult;
     }
     
@@ -2041,10 +2041,10 @@ class CachedValidationResult {
 }
 
 /**
- * ValidationResult represents the result of a test data validation operation.
+ * TestDataTestDataValidationResult represents the result of a test data validation operation.
  * Contains validation status, errors, warnings, and performance metrics.
  */
-class ValidationResult {
+class TestDataValidationResult {
     
     private final boolean valid;
     private final List<String> errors;
@@ -2059,9 +2059,9 @@ class ValidationResult {
     private final Instant timestamp;
     
     /**
-     * Creates a new ValidationResult instance.
+     * Creates a new TestDataValidationResult instance.
      */
-    public ValidationResult(boolean valid, List<String> errors, List<String> warnings,
+    public TestDataValidationResult(boolean valid, List<String> errors, List<String> warnings,
                           Map<String, Object> validatedData, int errorCount, int warningCount,
                           String validationSummary, boolean hasErrors, boolean hasWarnings) {
         this.valid = valid;
@@ -2138,7 +2138,7 @@ class ValidationResult {
      */
     public void addError(String error) {
         // This should not be called on immutable result
-        throw new UnsupportedOperationException("ValidationResult is immutable");
+        throw new UnsupportedOperationException("TestDataValidationResult is immutable");
     }
     
     /**
@@ -2148,7 +2148,7 @@ class ValidationResult {
      */
     public void addWarning(String warning) {
         // This should not be called on immutable result
-        throw new UnsupportedOperationException("ValidationResult is immutable");
+        throw new UnsupportedOperationException("TestDataValidationResult is immutable");
     }
     
     /**
@@ -2206,7 +2206,7 @@ class ValidationResult {
     }
     
     /**
-     * Builder class for creating ValidationResult instances.
+     * Builder class for creating TestDataValidationResult instances.
      */
     static class Builder {
         private List<String> errors = new ArrayList<>();
@@ -2240,7 +2240,7 @@ class ValidationResult {
         /**
          * Merges another validation result.
          */
-        public Builder mergeResult(ValidationResult other) {
+        public Builder mergeResult(TestDataValidationResult other) {
             if (other != null) {
                 errors.addAll(other.getErrors());
                 warnings.addAll(other.getWarnings());
@@ -2252,9 +2252,9 @@ class ValidationResult {
         }
         
         /**
-         * Builds the ValidationResult.
+         * Builds the TestDataValidationResult.
          */
-        public ValidationResult build(long startTime) {
+        public TestDataValidationResult build(long startTime) {
             boolean valid = errors.isEmpty();
             int errorCount = errors.size();
             int warningCount = warnings.size();
@@ -2269,32 +2269,13 @@ class ValidationResult {
                 summary += " and " + warningCount + " warning(s)";
             }
             
-            return new ValidationResult(valid, errors, warnings, validatedData, 
+            return new TestDataValidationResult(valid, errors, warnings, validatedData, 
                                       errorCount, warningCount, summary, hasErrors, hasWarnings);
         }
     }
 }
 
-/**
- * ValidationMode defines validation behavior and error handling strategies.
- */
-enum ValidationMode {
-    
-    /**
-     * Stop validation on first error for quick feedback during development.
-     */
-    FAIL_FAST,
-    
-    /**
-     * Collect all validation errors for comprehensive reporting.
-     */
-    COLLECT_ALL_ERRORS,
-    
-    /**
-     * Report validation issues as warnings without failing tests.
-     */
-    WARNING_ONLY
-}
+
 
 /**
  * TestDataType defines supported test data file formats.
