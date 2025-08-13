@@ -233,7 +233,7 @@ public class MetricsCollector {
             
             // Log collection start event
             auditLogger.log(
-                com.automation.framework.exceptions.LogLevel.INFO,
+                LogLevel.INFO,
                 "Metrics collection started with " + COLLECTION_INTERVAL.getSeconds() + "s interval",
                 Map.of("collectionInterval", COLLECTION_INTERVAL.toString(),
                        "baselineInterval", BASELINE_UPDATE_INTERVAL.toString())
@@ -291,7 +291,7 @@ public class MetricsCollector {
             
             // Log collection stop event
             auditLogger.log(
-                com.automation.framework.exceptions.LogLevel.INFO,
+                LogLevel.INFO,
                 "Metrics collection stopped after " + collectionDuration.getSeconds() + " seconds",
                 Map.of("collectionDuration", collectionDuration.toString(),
                        "totalCycles", collectionCycles.get(),
@@ -449,7 +449,7 @@ public class MetricsCollector {
             // Log violations if any found
             if (!violations.isEmpty()) {
                 auditLogger.log(
-                    com.automation.framework.exceptions.LogLevel.WARN,
+                    LogLevel.WARN,
                     "Threshold violations detected: " + violations.size() + " violations",
                     Map.of("violationCount", violations.size(),
                            "violations", violations.stream()
@@ -476,7 +476,7 @@ public class MetricsCollector {
         
         try {
             // Framework health
-            healthMetrics.put("frameworkStatus", frameworkManager.getStatus().toString());
+            healthMetrics.put("frameworkStatus", String.valueOf(frameworkManager.getStatus()));
             healthMetrics.put("frameworkUptime", collectionActive.get() && collectionStartTime != null ?
                 Duration.between(collectionStartTime, Instant.now()).getSeconds() : 0);
             
@@ -487,7 +487,7 @@ public class MetricsCollector {
             healthMetrics.put("memoryHealthy", memoryUtilization < 0.8);
             
             // Browser session health
-            int activeBrowserSessions = browserManager.getActiveSessions().size();
+            int activeBrowserSessions = browserManager.getCurrentSessionCount();
             double browserUtilization = (double) activeBrowserSessions / MAX_BROWSER_SESSIONS;
             healthMetrics.put("browserSessionUtilization", browserUtilization);
             healthMetrics.put("browserSessionsHealthy", browserUtilization < 0.8);
@@ -540,7 +540,7 @@ public class MetricsCollector {
         
         try {
             // Framework state and lifecycle
-            metrics.put("status", frameworkManager.getStatus().toString());
+            metrics.put("status", String.valueOf(frameworkManager.getStatus()));
             metrics.put("activeModules", frameworkManager.getRegisteredModuleIds());
             metrics.put("moduleCount", frameworkManager.getRegisteredModuleCount());
             
@@ -583,10 +583,8 @@ public class MetricsCollector {
         
         try {
             // Active session tracking
-            List<Object> activeSessions = browserManager.getActiveSessions().stream()
-                .map(session -> (Object) session)
-                .collect(Collectors.toList());
-            metrics.put("activeSessions", activeSessions.size());
+            int activeSessionCount = browserManager.getCurrentSessionCount();
+            metrics.put("activeSessions", activeSessionCount);
             metrics.put("maxSessions", MAX_BROWSER_SESSIONS);
             
             // Memory usage per session
@@ -608,20 +606,12 @@ public class MetricsCollector {
             metrics.put("browserSessionMetrics", sessionMetricsObj);
             
             // Session utilization
-            double utilization = (double) activeSessions.size() / MAX_BROWSER_SESSIONS;
+            double utilization = (double) activeSessionCount / MAX_BROWSER_SESSIONS;
             metrics.put("sessionUtilization", utilization);
             
-            // Session duration tracking
-            Map<String, Object> sessionDurations = new HashMap<>();
-            for (Object session : activeSessions) {
-                // Extract session ID and get duration (simplified since we don't have direct access to session ID)
-                String sessionId = "session_" + session.hashCode();
-                Duration duration = browserManager.getSessionDuration(sessionId);
-                if (duration != null) {
-                    sessionDurations.put(sessionId, duration.getSeconds());
-                }
-            }
-            metrics.put("sessionDurations", sessionDurations);
+            // Session duration tracking - use session metrics instead of iterating over individual sessions
+            Object sessionMetrics = browserManager.getBrowserSessionMetrics();
+            metrics.put("sessionDurationMetrics", sessionMetrics);
             
         } catch (Exception e) {
             logger.error("Error collecting browser metrics", e);
@@ -764,7 +754,7 @@ public class MetricsCollector {
             }
             
             // Log alert through AuditLogger
-            com.automation.framework.exceptions.LogLevel logLevel = mapAlertLevelToLogLevel(alertLevel);
+            LogLevel logLevel = mapAlertLevelToLogLevel(alertLevel);
             auditLogger.log(logLevel, "PERFORMANCE ALERT: " + alertMessage, alertContext);
             
             // Log to standard logger based on severity
@@ -876,7 +866,7 @@ public class MetricsCollector {
             updateBrowserSessionBaseline();
             
             auditLogger.log(
-                com.automation.framework.exceptions.LogLevel.DEBUG,
+                LogLevel.DEBUG,
                 "Performance baselines updated",
                 Map.of("baselineUpdateTime", Instant.now())
             );
@@ -1160,17 +1150,17 @@ public class MetricsCollector {
         }
     }
     
-    private com.automation.framework.exceptions.LogLevel mapAlertLevelToLogLevel(String alertLevel) {
+    private LogLevel mapAlertLevelToLogLevel(String alertLevel) {
         switch (alertLevel.toUpperCase()) {
             case "CRITICAL":
-                return com.automation.framework.exceptions.LogLevel.ERROR;
+                return LogLevel.ERROR;
             case "HIGH":
-                return com.automation.framework.exceptions.LogLevel.WARN;
+                return LogLevel.WARN;
             case "MEDIUM":
-                return com.automation.framework.exceptions.LogLevel.WARN;
+                return LogLevel.WARN;
             case "LOW":
             default:
-                return com.automation.framework.exceptions.LogLevel.INFO;
+                return LogLevel.INFO;
         }
     }
 }
