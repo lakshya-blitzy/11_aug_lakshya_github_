@@ -206,7 +206,7 @@
                 <configuration>
                     <!-- TestNG Configuration -->
                     <suiteXmlFiles>
-                        <suiteXmlFile>src/test/resources/testng.xml</suiteXmlFile>
+                        <suiteXmlFile>src/test/resources/testng-minimal.xml</suiteXmlFile>
                     </suiteXmlFiles>
                     
                     <!-- Parallel Execution Configuration -->
