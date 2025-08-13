@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Collections;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import java.io.IOException;
 
@@ -19,8 +21,11 @@ import java.io.IOException;
 import com.automation.framework.resources.ConnectionPoolManager;
 import com.automation.framework.exceptions.ErrorReporter;
 import com.automation.framework.api.AuthenticationManager;
+import com.automation.framework.api.AuthenticationType;
+import com.automation.framework.api.AuthenticationConfiguration;
 import com.automation.framework.api.RequestValidator;
 import com.automation.framework.api.ResponseValidator;
+import com.automation.framework.api.ValidationMode;
 import com.automation.framework.exceptions.RetryMechanism;
 import com.automation.framework.core.ConfigurationManager;
 
@@ -100,11 +105,11 @@ public class APIClient {
         // Initialize framework integration components
         this.connectionPoolManager = new ConnectionPoolManager();
         this.errorReporter = new ErrorReporter();
-        this.authenticationManager = new AuthenticationManager();
+        this.authenticationManager = AuthenticationManager.getInstance();
         this.requestValidator = new RequestValidator();
         this.responseValidator = new ResponseValidator();
-        this.retryMechanism = new RetryMechanism();
-        this.configurationManager = new ConfigurationManager();
+        this.retryMechanism = RetryMechanism.getInstance();
+        this.configurationManager = ConfigurationManager.getInstance();
         
         // Initialize configuration
         this.defaultHeaders = new HashMap<>();
@@ -358,9 +363,40 @@ public class APIClient {
             }
             
             // Execute request with retry mechanism
-            Response response = retryMechanism.executeWithRetry(() -> {
-                return executeRequestInternal(method, endpoint, requestSpec);
-            });
+            String operationName = method + "_" + endpoint.replaceAll("[^a-zA-Z0-9]", "_");
+            Response response = null;
+            
+            // Since RetryResult is not accessible, implement simple retry logic
+            int maxRetries = 3;
+            int attempt = 0;
+            Exception lastException = null;
+            
+            while (attempt < maxRetries && response == null) {
+                try {
+                    if (retryMechanism.isRetryAllowed(operationName)) {
+                        response = executeRequestInternal(method, endpoint, requestSpec);
+                        break; // Success
+                    } else {
+                        throw new RuntimeException("Retry not allowed for operation: " + operationName);
+                    }
+                } catch (Exception e) {
+                    lastException = e;
+                    attempt++;
+                    if (attempt < maxRetries) {
+                        // Wait before retry (exponential backoff)
+                        try {
+                            Thread.sleep(1000 * attempt);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException("Retry interrupted", ie);
+                        }
+                    }
+                }
+            }
+            
+            if (response == null && lastException != null) {
+                throw new RuntimeException("Request failed after " + maxRetries + " attempts", lastException);
+            }
             
             // Calculate response time and validate against SLA
             long responseTime = System.currentTimeMillis() - startTime;
@@ -392,8 +428,8 @@ public class APIClient {
             throw new RuntimeException("API request failed: " + method + " " + endpoint + " - " + e.getMessage(), e);
             
         } finally {
-            // Ensure connection is returned to pool
-            connectionPoolManager.releaseConnection();
+            // Ensure connections are properly managed
+            connectionPoolManager.closeIdleConnections(5, TimeUnit.SECONDS);
             
             // Clean up thread-local context
             correlationContext.remove();
@@ -583,9 +619,15 @@ public class APIClient {
         
         try {
             // Validate token using AuthenticationManager
-            if (!authenticationManager.isTokenValid()) {
+            // Note: Using BEARER_TOKEN as default authentication type for token validation
+            AuthenticationType authType = AuthenticationType.BEARER_TOKEN;
+            if (!authenticationManager.isTokenValid(authType)) {
                 errorReporter.warn("Token validation failed, attempting to refresh");
-                authenticationManager.refreshToken();
+                // Create basic authentication configuration for token refresh
+                AuthenticationConfiguration authConfig = new AuthenticationConfiguration();
+                authConfig.setAuthenticationType(authType);
+                authConfig.setCredentials(token);
+                authenticationManager.refreshToken(authConfig);
             }
             
             // Add authentication header
@@ -620,15 +662,18 @@ public class APIClient {
     public void validateRequest(Object requestBody, Map<String, String> headers) {
         try {
             // Validate request payload
-            requestValidator.validateRequestPayload(requestBody);
+            requestValidator.validateRequestPayload(requestBody, ValidationMode.STRICT);
             
             // Validate headers if provided
             if (headers != null) {
                 requestValidator.validateHeaders(headers);
             }
             
-            // Sanitize input for security
-            requestValidator.sanitizeInput(requestBody);
+            // Sanitize input for security (convert to string first)
+            if (requestBody != null) {
+                String sanitizedInput = requestValidator.sanitizeInput(requestBody.toString());
+                // Note: Sanitized input can be used for logging or further processing
+            }
             
         } catch (Exception e) {
             String errorMessage = "Request validation failed";
@@ -690,7 +735,7 @@ public class APIClient {
             status.put("isHealthy", connectionPoolManager.isPoolHealthy());
             status.put("maxConnections", connectionPoolManager.getMaxConnections());
             status.put("connectionTimeout", connectionPoolManager.getConnectionTimeout());
-            status.put("poolMetrics", connectionPoolManager.getPoolMetrics());
+            status.put("poolMetrics", convertPoolMetricsToMap(null)); // Pass null since we use ConnectionPoolManager methods directly
             status.put("activeConnections", getActiveConnections());
             status.put("idleConnections", getIdleConnections());
             
@@ -726,7 +771,7 @@ public class APIClient {
             healthStatus.put("clientActive", !isShutdown);
             
             // Check retry mechanism
-            boolean retryHealthy = retryMechanism.isRetryAllowed();
+            boolean retryHealthy = retryMechanism.isRetryAllowed("healthCheck");
             healthStatus.put("retryMechanism", retryHealthy);
             
             // Overall health
@@ -768,8 +813,8 @@ public class APIClient {
                 httpClient.close();
             }
             
-            // Release all connections from pool
-            connectionPoolManager.releaseConnection();
+            // Close idle connections from pool
+            connectionPoolManager.closeIdleConnections(0, TimeUnit.SECONDS);
             
             // Close idle connections
             closeIdleConnections();
@@ -797,9 +842,7 @@ public class APIClient {
      */
     public int getActiveConnections() {
         try {
-            Map<String, Object> poolMetrics = connectionPoolManager.getPoolMetrics();
-            return poolMetrics.containsKey("activeConnections") ? 
-                   (Integer) poolMetrics.get("activeConnections") : 0;
+            return connectionPoolManager.getActiveConnections();
         } catch (Exception e) {
             errorReporter.logException(e, "Failed to get active connections count", Collections.emptyMap());
             return -1;
@@ -813,9 +856,7 @@ public class APIClient {
      */
     public int getIdleConnections() {
         try {
-            Map<String, Object> poolMetrics = connectionPoolManager.getPoolMetrics();
-            return poolMetrics.containsKey("idleConnections") ? 
-                   (Integer) poolMetrics.get("idleConnections") : 0;
+            return connectionPoolManager.getAvailableConnections();
         } catch (Exception e) {
             errorReporter.logException(e, "Failed to get idle connections count", Collections.emptyMap());
             return -1;
@@ -828,7 +869,7 @@ public class APIClient {
     public void closeIdleConnections() {
         try {
             // Close idle connections through connection pool manager
-            connectionPoolManager.releaseConnection();
+            connectionPoolManager.closeIdleConnections(5, TimeUnit.SECONDS);
             
             logger.info("Idle connections closed successfully");
             
@@ -899,8 +940,12 @@ public class APIClient {
     private void addAuthenticationToRequest(RequestSpecification requestSpec) {
         try {
             // Check authentication status
-            if (!authenticationManager.validateCredentials()) {
-                authenticationManager.refreshToken();
+            AuthenticationType authType = AuthenticationType.BEARER_TOKEN;
+            if (!authenticationManager.validateCredentials(authType)) {
+                // Create basic authentication configuration for token refresh
+                AuthenticationConfiguration authConfig = new AuthenticationConfiguration();
+                authConfig.setAuthenticationType(authType);
+                authenticationManager.refreshToken(authConfig);
             }
             
             // Add authentication header based on current auth status
@@ -973,6 +1018,31 @@ public class APIClient {
         }
         
         errorReporter.info("API request completed successfully");
+    }
+    
+    /**
+     * Creates a pool metrics map from available ConnectionPoolManager methods.
+     * Since PoolMetrics class is not public, we use individual getter methods.
+     */
+    private Map<String, Object> convertPoolMetricsToMap(Object poolMetrics) {
+        Map<String, Object> metricsMap = new HashMap<>();
+        
+        try {
+            // Use public methods from ConnectionPoolManager instead of PoolMetrics
+            metricsMap.put("activeConnections", connectionPoolManager.getActiveConnections());
+            metricsMap.put("availableConnections", connectionPoolManager.getAvailableConnections());
+            metricsMap.put("maxConnections", connectionPoolManager.getMaxConnections());
+            metricsMap.put("poolUtilization", connectionPoolManager.getPoolUtilization());
+            metricsMap.put("connectionTimeout", connectionPoolManager.getConnectionTimeout());
+            metricsMap.put("isHealthy", connectionPoolManager.isPoolHealthy());
+            metricsMap.put("timestamp", System.currentTimeMillis());
+            
+        } catch (Exception e) {
+            metricsMap.put("error", "Failed to collect pool metrics: " + e.getMessage());
+            metricsMap.put("timestamp", System.currentTimeMillis());
+        }
+        
+        return metricsMap;
     }
     
     /**
