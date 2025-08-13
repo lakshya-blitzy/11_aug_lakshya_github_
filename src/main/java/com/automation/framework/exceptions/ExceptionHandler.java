@@ -16,12 +16,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.ExecutionException;
 import java.time.Instant;
 
 // Internal imports from framework dependencies
 import com.automation.framework.exceptions.ErrorReporter;
+import com.automation.framework.exceptions.LogLevel;
 import com.automation.framework.exceptions.RecoveryStrategy;
 import com.automation.framework.exceptions.RetryMechanism;
+
 import com.automation.framework.core.FrameworkManager;
 
 /**
@@ -132,9 +135,9 @@ public class ExceptionHandler {
         if (exception == null) {
             logger.warn("Attempted to handle null exception - no action taken");
             return CompletableFuture.completedFuture(
-                new RecoveryResult(false, RecoveryLevel.COMPONENT_LEVEL, 0, Duration.ZERO, 
-                                 "Cannot handle null exception", Collections.emptyList(), 
-                                 Collections.emptyMap(), Instant.now()));
+                new RecoveryResult(false, RecoveryLevel.COMPONENT_LEVEL, Collections.emptyList(), 
+                                 0L, "Cannot handle null exception", Collections.emptyList(), 
+                                 Collections.emptyMap(), Instant.now(), "Null exception provided", 0));
         }
         
         return CompletableFuture.supplyAsync(() -> {
@@ -155,15 +158,16 @@ public class ExceptionHandler {
                 updateErrorTracking(exception, errorLevel);
                 
                 // Log the exception with full context
-                errorReporter.logException(exception, exceptionContext.getAdditionalContext());
+                errorReporter.logException(exception, "Exception handled by ExceptionHandler", exceptionContext.getAdditionalContext());
                 
                 // Determine if recovery is feasible based on current system state
                 if (!isRecoveryFeasible(errorLevel, exception)) {
                     logger.warn("Recovery not feasible for error level: {} - {}", errorLevel, exception.getMessage());
-                    RecoveryResult failedResult = new RecoveryResult(false, getRecoveryLevel(errorLevel), 0, 
-                        Duration.between(processingStart, Instant.now()), 
+                    RecoveryResult failedResult = new RecoveryResult(false, getRecoveryLevel(errorLevel), 
+                        Collections.emptyList(), Duration.between(processingStart, Instant.now()).toMillis(), 
                         "Recovery not feasible: " + exception.getMessage(), 
-                        Collections.emptyList(), Collections.emptyMap(), processingStart);
+                        Collections.emptyList(), Collections.emptyMap(), processingStart, 
+                        "Recovery not feasible for error level: " + errorLevel, 0);
                     recordRecoveryResult(failedResult);
                     return failedResult;
                 }
@@ -176,12 +180,14 @@ public class ExceptionHandler {
                 recoveryResult = new RecoveryResult(
                     recoveryResult.isSuccessful(),
                     recoveryResult.getRecoveryLevel(),
-                    recoveryResult.getAttemptCount(),
-                    processingDuration,
+                    recoveryResult.getExecutedActions(),
+                    processingDuration.toMillis(),
                     recoveryResult.getErrorMessage(),
                     recoveryResult.getRecoveryActions(),
                     recoveryResult.getPreservedState(),
-                    processingStart
+                    processingStart,
+                    recoveryResult.getFailureReason(),
+                    recoveryResult.getRecoveryAttempts()
                 );
                 
                 // Record recovery result for history and analysis
@@ -211,18 +217,21 @@ public class ExceptionHandler {
                 
                 // Emergency fallback - create minimal recovery result
                 Duration processingDuration = Duration.between(processingStart, Instant.now());
-                RecoveryResult emergencyResult = new RecoveryResult(false, RecoveryLevel.SUITE_LEVEL, 1, 
-                    processingDuration, "Exception handling failed: " + processingException.getMessage(), 
-                    Collections.emptyList(), Collections.emptyMap(), processingStart);
+                RecoveryResult emergencyResult = new RecoveryResult(false, RecoveryLevel.SUITE_LEVEL, 
+                    Collections.emptyList(), processingDuration.toMillis(), 
+                    "Exception handling failed: " + processingException.getMessage(), 
+                    Collections.emptyList(), Collections.emptyMap(), processingStart,
+                    "Emergency exception handling failure", 1);
                 
                 recordRecoveryResult(emergencyResult);
                 return emergencyResult;
             }
         }).exceptionally(throwable -> {
             logger.error("Asynchronous exception handling failure", throwable);
-            return new RecoveryResult(false, RecoveryLevel.SUITE_LEVEL, 0, Duration.ZERO, 
-                "Asynchronous handling failure: " + throwable.getMessage(), 
-                Collections.emptyList(), Collections.emptyMap(), Instant.now());
+            return new RecoveryResult(false, RecoveryLevel.SUITE_LEVEL, Collections.emptyList(), 
+                0L, "Asynchronous handling failure: " + throwable.getMessage(), 
+                Collections.emptyList(), Collections.emptyMap(), Instant.now(),
+                "Asynchronous exception handling failure", 0);
         });
     }
     
@@ -440,7 +449,7 @@ public class ExceptionHandler {
                 logger.debug("Executing component-level recovery for correlation ID: {}", correlationId);
                 
                 // Check if retry is allowed for this exception type
-                if (!retryMechanism.isRetryAllowed(context.getException())) {
+                if (!retryMechanism.isRetryAllowed("component-recovery")) {
                     logger.debug("Retry not allowed for exception type: {}", 
                                context.getException().getClass().getSimpleName());
                     return createFailedRecoveryResult(RecoveryLevel.COMPONENT_LEVEL, 
@@ -448,16 +457,16 @@ public class ExceptionHandler {
                 }
                 
                 // Execute recovery using retry mechanism
-                Optional<Object> retryResult = retryMechanism.executeWithRetry(() -> {
+                RetryResult<Object> retryResult = retryMechanism.executeWithRetry("component-recovery", () -> {
                     // Simulate component recovery logic
                     logger.debug("Attempting component recovery for: {}", correlationId);
                     return performComponentRecovery(context);
                 });
                 
                 Duration recoveryDuration = Duration.between(recoveryStart, Instant.now());
-                int attemptCount = retryMechanism.getRetryCount();
+                int attemptCount = retryMechanism.getRetryCount("component-recovery");
                 
-                if (retryResult.isPresent()) {
+                if (retryResult.isSuccessful()) {
                     logger.info("Component recovery successful after {} attempts in {}ms", 
                               attemptCount, recoveryDuration.toMillis());
                     
@@ -467,8 +476,9 @@ public class ExceptionHandler {
                         "Performed transient error resolution"
                     );
                     
-                    return new RecoveryResult(true, RecoveryLevel.COMPONENT_LEVEL, attemptCount, 
-                        recoveryDuration, null, actions, Collections.emptyMap(), recoveryStart);
+                    return new RecoveryResult(true, RecoveryLevel.COMPONENT_LEVEL, actions, 
+                        recoveryDuration.toMillis(), null, actions, Collections.emptyMap(), 
+                        recoveryStart, null, attemptCount);
                 } else {
                     logger.warn("Component recovery failed after {} attempts", attemptCount);
                     return createFailedRecoveryResult(RecoveryLevel.COMPONENT_LEVEL, 
@@ -508,33 +518,40 @@ public class ExceptionHandler {
                 
                 // Evaluate recovery feasibility using recovery strategy
                 boolean feasible = recoveryStrategy.evaluateRecoveryFeasibility(
-                    context.getException(), context.getSystemState());
+                    RecoveryLevel.TEST_LEVEL, context.getSystemState());
                 
                 if (!feasible) {
                     logger.warn("Test-level recovery not feasible for: {}", correlationId);
-                    return new RecoveryResult(false, RecoveryLevel.TEST_LEVEL, 0, 
-                        Duration.between(recoveryStart, Instant.now()), 
+                    return new RecoveryResult(false, RecoveryLevel.TEST_LEVEL, Collections.emptyList(), 
+                        Duration.between(recoveryStart, Instant.now()).toMillis(), 
                         "Test recovery not feasible", Collections.emptyList(), 
-                        preservedState, recoveryStart);
+                        preservedState, recoveryStart, "Test recovery not feasible", 0);
                 }
                 
                 // Create and execute recovery plan
-                Optional<Object> recoveryPlan = recoveryStrategy.createRecoveryPlan(
-                    context.getException(), RecoveryLevel.TEST_LEVEL, context.getSystemState());
+                RecoveryPlan recoveryPlan = recoveryStrategy.createRecoveryPlan(
+                    RecoveryLevel.TEST_LEVEL, context.getSystemState());
                 
-                if (recoveryPlan.isEmpty()) {
+                if (recoveryPlan == null) {
                     logger.warn("Failed to create recovery plan for test-level recovery: {}", correlationId);
                     return createFailedRecoveryResult(RecoveryLevel.TEST_LEVEL, 
                         "Failed to create recovery plan", recoveryStart);
                 }
                 
                 // Execute the recovery plan
-                Optional<Object> executionResult = recoveryStrategy.executeRecovery(
-                    recoveryPlan.get(), context.getSystemState());
+                CompletableFuture<RecoveryResult> executionResult = recoveryStrategy.executeRecovery(recoveryPlan);
+                RecoveryResult result;
+                try {
+                    result = executionResult.get(); // Blocking wait for recovery completion
+                } catch (InterruptedException | ExecutionException e) {
+                    logger.error("Recovery execution failed", e);
+                    return createFailedRecoveryResult(RecoveryLevel.TEST_LEVEL, 
+                        "Recovery execution failed: " + e.getMessage(), recoveryStart);
+                }
                 
                 Duration recoveryDuration = Duration.between(recoveryStart, Instant.now());
                 
-                if (executionResult.isPresent()) {
+                if (result.isSuccessful()) {
                     logger.info("Test-level recovery successful in {}ms", recoveryDuration.toMillis());
                     
                     List<String> actions = Arrays.asList(
@@ -544,13 +561,15 @@ public class ExceptionHandler {
                         "Preserved execution state for analysis"
                     );
                     
-                    return new RecoveryResult(true, RecoveryLevel.TEST_LEVEL, 1, 
-                        recoveryDuration, null, actions, preservedState, recoveryStart);
+                    return new RecoveryResult(true, RecoveryLevel.TEST_LEVEL, actions, 
+                        recoveryDuration.toMillis(), null, actions, preservedState, 
+                        recoveryStart, null, 1);
                 } else {
                     logger.warn("Test-level recovery execution failed for: {}", correlationId);
-                    return new RecoveryResult(false, RecoveryLevel.TEST_LEVEL, 1, 
-                        recoveryDuration, "Recovery plan execution failed", 
-                        Collections.emptyList(), preservedState, recoveryStart);
+                    return new RecoveryResult(false, RecoveryLevel.TEST_LEVEL, Collections.emptyList(), 
+                        recoveryDuration.toMillis(), "Recovery plan execution failed", 
+                        Collections.emptyList(), preservedState, recoveryStart, 
+                        "Recovery plan execution failed", 1);
                 }
                 
             } catch (Exception e) {
@@ -591,11 +610,13 @@ public class ExceptionHandler {
                     logger.error("Framework unstable - triggering emergency shutdown for: {}", correlationId);
                     triggerEmergencyShutdown("Framework instability detected during suite recovery");
                     
-                    return new RecoveryResult(false, RecoveryLevel.SUITE_LEVEL, 1, 
-                        Duration.between(recoveryStart, Instant.now()), 
+                    return new RecoveryResult(false, RecoveryLevel.SUITE_LEVEL, 
+                        Arrays.asList("Triggered emergency shutdown", "Preserved system state"), 
+                        Duration.between(recoveryStart, Instant.now()).toMillis(), 
                         "Emergency shutdown triggered due to framework instability", 
                         Arrays.asList("Triggered emergency shutdown", "Preserved system state"), 
-                        preservedState, recoveryStart);
+                        preservedState, recoveryStart, 
+                        "Emergency shutdown triggered due to framework instability", 1);
                 }
                 
                 // Attempt graceful degradation
@@ -611,9 +632,9 @@ public class ExceptionHandler {
                         "Coordinated with FrameworkManager"
                     );
                     
-                    return new RecoveryResult(true, RecoveryLevel.SUITE_LEVEL, 1, 
-                        Duration.between(recoveryStart, Instant.now()), null, actions, 
-                        preservedState, recoveryStart);
+                    return new RecoveryResult(true, RecoveryLevel.SUITE_LEVEL, actions, 
+                        Duration.between(recoveryStart, Instant.now()).toMillis(), null, actions, 
+                        preservedState, recoveryStart, null, 1);
                 } else {
                     logger.warn("Graceful degradation failed - attempting partial execution: {}", correlationId);
                     
@@ -630,10 +651,10 @@ public class ExceptionHandler {
                             "Maintained minimal functionality"
                         );
                         
-                        return new RecoveryResult(true, RecoveryLevel.SUITE_LEVEL, 2, 
-                            Duration.between(recoveryStart, Instant.now()), 
+                        return new RecoveryResult(true, RecoveryLevel.SUITE_LEVEL, actions, 
+                            Duration.between(recoveryStart, Instant.now()).toMillis(), 
                             "Partial recovery - graceful degradation failed", actions, 
-                            preservedState, recoveryStart);
+                            preservedState, recoveryStart, null, 2);
                     } else {
                         logger.error("Both graceful degradation and partial execution failed: {}", correlationId);
                         return createFailedRecoveryResult(RecoveryLevel.SUITE_LEVEL, 
@@ -684,10 +705,10 @@ public class ExceptionHandler {
             }
             mergedContext.putAll(systemState);
             mergedContext.put("capture_timestamp", timestamp);
-            mergedContext.put("framework_status", frameworkManager.getStatus().toString());
+            mergedContext.put("framework_status", String.valueOf(frameworkManager.getStatus()));
             
-            // Mask sensitive data in the context
-            Map<String, Object> maskedContext = errorReporter.maskSensitiveData(mergedContext);
+            // Use the merged context directly (masking will be handled during logging)
+            Map<String, Object> maskedContext = mergedContext;
             
             logger.debug("Captured error context for correlation ID: {} - Module: {}, Test: {}", 
                        correlationId, moduleName, testName);
@@ -782,9 +803,9 @@ public class ExceptionHandler {
             lastEmergencyShutdown.set(shutdownStart);
             
             // Log critical error with full context
-            errorReporter.error("Emergency shutdown initiated", 
+            errorReporter.log(LogLevel.ERROR, "Emergency shutdown initiated", 
                 Map.of("reason", reason, "timestamp", shutdownStart.toString(), 
-                       "framework_status", frameworkManager.getStatus().toString()));
+                       "framework_status", String.valueOf(frameworkManager.getStatus())), null);
             
             // Attempt graceful framework shutdown with timeout
             CompletableFuture<Boolean> shutdownFuture = frameworkManager.shutdown();
@@ -838,7 +859,7 @@ public class ExceptionHandler {
             preservedState.put("system_state", new HashMap<>(context.getSystemState()));
             
             // Preserve framework status and configuration
-            preservedState.put("framework_status", frameworkManager.getStatus().toString());
+            preservedState.put("framework_status", String.valueOf(frameworkManager.getStatus()));
             preservedState.put("active_modules", frameworkManager.getRegisteredModuleIds());
             
             // Preserve error tracking state
@@ -1013,7 +1034,8 @@ public class ExceptionHandler {
             }
             
             // Use recovery strategy for detailed feasibility analysis
-            return recoveryStrategy.evaluateRecoveryFeasibility(exception, captureSystemState());
+            RecoveryLevel recoveryLevel = getRecoveryLevel(errorLevel);
+            return recoveryStrategy.evaluateRecoveryFeasibility(recoveryLevel, captureSystemState());
             
         } catch (Exception e) {
             logger.error("Error evaluating recovery feasibility", e);
@@ -1082,7 +1104,7 @@ public class ExceptionHandler {
             // Performance trends
             OptionalDouble avgRecoveryTime = recoveryHistory.stream()
                 .filter(result -> result.getTimestamp().isAfter(now.minus(Duration.ofHours(1))))
-                .mapToDouble(result -> result.getDuration().toMillis())
+                .mapToDouble(result -> result.getDuration())
                 .average();
             
             trends.put("average_recovery_time_ms", avgRecoveryTime.orElse(0.0));
@@ -1217,8 +1239,8 @@ public class ExceptionHandler {
      * Creates a failed recovery result with standard format.
      */
     private RecoveryResult createFailedRecoveryResult(RecoveryLevel level, String errorMessage, Instant startTime) {
-        return new RecoveryResult(false, level, 1, Duration.between(startTime, Instant.now()), 
-            errorMessage, Collections.emptyList(), Collections.emptyMap(), startTime);
+        return new RecoveryResult(false, level, Collections.emptyList(), Duration.between(startTime, Instant.now()).toMillis(), 
+            errorMessage, Collections.emptyList(), Collections.emptyMap(), startTime, "Recovery failed", 1);
     }
     
     /**
@@ -1236,7 +1258,7 @@ public class ExceptionHandler {
             }
             
             logger.debug("Recorded recovery result - Success: {}, Level: {}, Duration: {}ms", 
-                       result.isSuccessful(), result.getRecoveryLevel(), result.getDuration().toMillis());
+                       result.isSuccessful(), result.getRecoveryLevel(), result.getDuration());
                        
         } catch (Exception e) {
             logger.error("Error recording recovery result", e);
@@ -1331,7 +1353,7 @@ public class ExceptionHandler {
         try {
             // Check framework status
             var status = frameworkManager.getStatus();
-            if (status.toString().contains("ERROR") || status.toString().contains("CRITICAL")) {
+            if (String.valueOf(status).contains("ERROR") || String.valueOf(status).contains("CRITICAL")) {
                 return false;
             }
             
@@ -1439,7 +1461,7 @@ public class ExceptionHandler {
         
         try {
             state.put("timestamp", Instant.now());
-            state.put("framework_status", frameworkManager.getStatus().toString());
+            state.put("framework_status", String.valueOf(frameworkManager.getStatus()));
             state.put("active_modules", frameworkManager.getRegisteredModuleIds());
             state.put("total_memory", Runtime.getRuntime().totalMemory());
             state.put("free_memory", Runtime.getRuntime().freeMemory());
@@ -1501,7 +1523,7 @@ public class ExceptionHandler {
     /**
      * Checks if the exception is a critical system error.
      */
-    private boolean isCriticalSystemError(Exception exception) {
+    private boolean isCriticalSystemError(Throwable exception) {
         return exception instanceof OutOfMemoryError ||
                exception instanceof StackOverflowError ||
                exception instanceof NoClassDefFoundError ||
@@ -1606,35 +1628,7 @@ enum ErrorLevel {
     CRITICAL
 }
 
-/**
- * RecoveryLevel enumeration represents the different levels of recovery operations
- * within the three-tier recovery system of the automation framework.
- * 
- * Each recovery level corresponds to specific recovery strategies, resource allocation,
- * and coordination mechanisms designed to address failures at different system levels.
- */
-enum RecoveryLevel {
-    /**
-     * Component-level recovery for localized failures within individual testing modules.
-     * Implements automatic retry mechanisms, alternative locator strategies, and
-     * resource reallocation to handle transient issues without impacting overall execution.
-     */
-    COMPONENT_LEVEL,
-    
-    /**
-     * Test-level recovery for failures affecting individual test cases.
-     * Manages failures through state isolation, error context capture, and continuation
-     * decision logic with detailed failure diagnostics and recovery coordination.
-     */
-    TEST_LEVEL,
-    
-    /**
-     * Suite-level recovery for critical failures that impact entire test suites.
-     * Addresses failures through graceful degradation, partial execution capabilities,
-     * and emergency shutdown procedures with comprehensive result preservation.
-     */
-    SUITE_LEVEL
-}
+
 
 /**
  * ExceptionContext class captures comprehensive error context information for exception analysis
@@ -1771,130 +1765,5 @@ class ExceptionContext {
     public String toString() {
         return String.format("ExceptionContext{correlationId='%s', errorLevel=%s, module='%s', test='%s', timestamp=%s}", 
                            correlationId, errorLevel, moduleName, testName, timestamp);
-    }
-}
-
-/**
- * RecoveryResult class represents the outcome of recovery operations within the automation framework.
- * 
- * This class encapsulates comprehensive information about recovery attempts including success status,
- * recovery level, attempt count, execution duration, error details, recovery actions taken,
- * preserved state information, and timing data for analysis and optimization.
- * 
- * Recovery results support performance monitoring, trend analysis, and continuous improvement
- * of recovery strategies across the three-tier recovery system.
- */
-class RecoveryResult {
-    
-    private final boolean successful;
-    private final RecoveryLevel recoveryLevel;
-    private final int attemptCount;
-    private final Duration duration;
-    private final String errorMessage;
-    private final List<String> recoveryActions;
-    private final Map<String, Object> preservedState;
-    private final Instant timestamp;
-    
-    /**
-     * Creates a new RecoveryResult with comprehensive recovery operation information.
-     * 
-     * @param successful true if the recovery operation was successful, false otherwise
-     * @param recoveryLevel The recovery level that was applied (COMPONENT, TEST, or SUITE)
-     * @param attemptCount The number of recovery attempts that were made
-     * @param duration The total duration of the recovery operation
-     * @param errorMessage Error message if recovery failed, null if successful
-     * @param recoveryActions List of recovery actions that were taken
-     * @param preservedState State information preserved during the recovery operation
-     * @param timestamp The timestamp when the recovery operation began
-     */
-    public RecoveryResult(boolean successful, RecoveryLevel recoveryLevel, int attemptCount,
-                        Duration duration, String errorMessage, List<String> recoveryActions,
-                        Map<String, Object> preservedState, Instant timestamp) {
-        this.successful = successful;
-        this.recoveryLevel = recoveryLevel;
-        this.attemptCount = attemptCount;
-        this.duration = duration;
-        this.errorMessage = errorMessage;
-        this.recoveryActions = new ArrayList<>(recoveryActions != null ? recoveryActions : Collections.emptyList());
-        this.preservedState = new HashMap<>(preservedState != null ? preservedState : Collections.emptyMap());
-        this.timestamp = timestamp;
-    }
-    
-    /**
-     * Gets the success status of the recovery operation.
-     * 
-     * @return true if recovery was successful, false otherwise
-     */
-    public boolean isSuccessful() {
-        return successful;
-    }
-    
-    /**
-     * Gets the recovery level that was applied during the recovery operation.
-     * 
-     * @return RecoveryLevel indicating the scope of recovery that was attempted
-     */
-    public RecoveryLevel getRecoveryLevel() {
-        return recoveryLevel;
-    }
-    
-    /**
-     * Gets the number of recovery attempts that were made.
-     * 
-     * @return Integer representing the total number of attempts
-     */
-    public int getAttemptCount() {
-        return attemptCount;
-    }
-    
-    /**
-     * Gets the total duration of the recovery operation.
-     * 
-     * @return Duration representing the time taken for recovery
-     */
-    public Duration getDuration() {
-        return duration;
-    }
-    
-    /**
-     * Gets the error message if recovery failed.
-     * 
-     * @return String containing error message or null if recovery was successful
-     */
-    public String getErrorMessage() {
-        return errorMessage;
-    }
-    
-    /**
-     * Gets the list of recovery actions that were taken during the operation.
-     * 
-     * @return Unmodifiable list containing descriptions of recovery actions
-     */
-    public List<String> getRecoveryActions() {
-        return Collections.unmodifiableList(recoveryActions);
-    }
-    
-    /**
-     * Gets the state information preserved during the recovery operation.
-     * 
-     * @return Unmodifiable map containing preserved state data
-     */
-    public Map<String, Object> getPreservedState() {
-        return Collections.unmodifiableMap(preservedState);
-    }
-    
-    /**
-     * Gets the timestamp when the recovery operation began.
-     * 
-     * @return Instant representing the start time of the recovery operation
-     */
-    public Instant getTimestamp() {
-        return timestamp;
-    }
-    
-    @Override
-    public String toString() {
-        return String.format("RecoveryResult{successful=%s, level=%s, attempts=%d, duration=%dms, timestamp=%s}", 
-                           successful, recoveryLevel, attemptCount, duration.toMillis(), timestamp);
     }
 }
