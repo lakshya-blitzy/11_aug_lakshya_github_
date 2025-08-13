@@ -330,8 +330,8 @@ public class FileResourceHandler {
                 }
             });
             
-            auditLogger.info("Temporary file cleanup completed - Cleaned: {}, Failed: {}", 
-                           cleanedCount, failedCleanups.size());
+            auditLogger.info("Temporary file cleanup completed - Cleaned: " + cleanedCount + 
+                           ", Failed: " + failedCleanups.size());
             
             if (!failedCleanups.isEmpty()) {
                 auditLogger.warn("Failed to cleanup temporary files: " + failedCleanups);
@@ -494,7 +494,7 @@ public class FileResourceHandler {
                 detectedLeaks.addAll(currentLeaks);
             }
             
-            auditLogger.info("Leak detection completed - Found {} potential leaks", currentLeaks.size());
+            auditLogger.info("Leak detection completed - Found " + currentLeaks.size() + " potential leaks");
             
             if (!currentLeaks.isEmpty()) {
                 auditLogger.logResourceModification("LEAK_DETECTION", "system", "ANALYSIS_COMPLETED", 
@@ -588,9 +588,8 @@ public class FileResourceHandler {
             
             long shutdownDuration = Duration.between(shutdownStart, Instant.now()).toMillis();
             
-            auditLogger.info("File resource handler shutdown completed - Duration: {}ms, " +
-                           "Completed: {}, Failed: {}", shutdownDuration, 
-                           completedComponents.size(), failedComponents.size());
+            auditLogger.info("File resource handler shutdown completed - Duration: " + shutdownDuration + "ms, " +
+                           "Completed: " + completedComponents.size() + ", Failed: " + failedComponents.size());
             
             // Log shutdown completion through audit logger
             auditLogger.logResourceModification("SHUTDOWN", "FileResourceHandler", "COMPLETED", 
@@ -877,7 +876,7 @@ public class FileResourceHandler {
                     "allSuccessful", allSuccessful
                 ));
             
-            auditLogger.info("Closed {} file resources, {} failures", closedCount, failedResources.size());
+            auditLogger.info("Closed " + closedCount + " file resources, " + failedResources.size() + " failures");
             
             if (!failedResources.isEmpty()) {
                 auditLogger.warn("Failed to close resources: " + failedResources);
@@ -1068,7 +1067,7 @@ public class FileResourceHandler {
                 try {
                     List<FileResourceLeak> leaks = detectFileHandleLeaks();
                     if (!leaks.isEmpty()) {
-                        auditLogger.warn("Periodic leak detection found {} potential leaks", leaks.size());
+                        auditLogger.warn("Periodic leak detection found " + leaks.size() + " potential leaks");
                     }
                 } catch (Exception e) {
                     auditLogger.error("Error in periodic leak detection - " + e.getMessage());
@@ -1079,9 +1078,9 @@ public class FileResourceHandler {
             cleanupScheduler.scheduleAtFixedRate(() -> {
                 try {
                     FileResourceMetrics metrics = getFileResourceMetrics();
-                    auditLogger.info("Resource metrics - Active: {}, Total opened: {}, Utilization: {}%", 
-                                    metrics.getActiveHandles(), metrics.getTotalFilesOpened(), 
-                                    String.format("%.1f", metrics.getResourceUtilization()));
+                    auditLogger.info("Resource metrics - Active: " + metrics.getActiveHandles() + 
+                                    ", Total opened: " + metrics.getTotalFilesOpened() + 
+                                    ", Utilization: " + String.format("%.1f", metrics.getResourceUtilization()) + "%");
                 } catch (Exception e) {
                     auditLogger.error("Error in periodic metrics logging - " + e.getMessage());
                 }
