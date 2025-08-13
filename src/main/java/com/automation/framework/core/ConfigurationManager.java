@@ -221,9 +221,9 @@ public class ConfigurationManager {
      * Reloads configuration from all sources.
      * This method is thread-safe and preserves runtime parameters.
      * 
-     * @return ValidationResult indicating success or failure
+     * @return ConfigurationValidationResult indicating success or failure
      */
-    public ValidationResult reloadConfiguration() {
+    public ConfigurationValidationResult reloadConfiguration() {
         logger.info("Reloading configuration from all sources");
         
         configLock.writeLock().lock();
@@ -253,7 +253,7 @@ public class ConfigurationManager {
             });
             
             // Validate the reloaded configuration
-            ValidationResult result = validateConfiguration();
+            ConfigurationValidationResult result = validateConfiguration();
             isValid.set(result.isValid());
             
             logger.info("Configuration reload completed. Valid: {}, Errors: {}, Warnings: {}", 
@@ -270,9 +270,9 @@ public class ConfigurationManager {
      * Validates the current configuration.
      * Performs comprehensive validation of all loaded properties.
      * 
-     * @return ValidationResult with validation status and any errors/warnings
+     * @return ConfigurationValidationResult with validation status and any errors/warnings
      */
-    public ValidationResult validateConfiguration() {
+    public ConfigurationValidationResult validateConfiguration() {
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         Map<String, Object> validatedProperties = new HashMap<>();
@@ -306,7 +306,7 @@ public class ConfigurationManager {
             logger.info("Configuration validation completed. Valid: {}, Errors: {}, Warnings: {}", 
                        isValid, errors.size(), warnings.size());
             
-            return new ValidationResult(isValid, errors, warnings, validatedProperties);
+            return new ConfigurationValidationResult(isValid, errors, warnings, validatedProperties);
             
         } finally {
             configLock.readLock().unlock();
@@ -526,7 +526,7 @@ public class ConfigurationManager {
      */
     private void loadDefaultConfiguration() {
         loadFromAllSources();
-        ValidationResult result = validateConfiguration();
+        ConfigurationValidationResult result = validateConfiguration();
         if (!result.isValid()) {
             logger.warn("Initial configuration validation failed: {}", result.getErrors());
         }
@@ -936,6 +936,32 @@ public class ConfigurationManager {
         }
         return false;
     }
+    
+    /**
+     * Gets performance metrics thresholds configuration.
+     * 
+     * @return Map containing metrics thresholds for various operations
+     */
+    public Map<String, Object> getMetricsThresholds() {
+        Map<String, Object> thresholds = new HashMap<>();
+        try {
+            // Default metrics thresholds
+            thresholds.put("validation.timeout.ms", Integer.parseInt(getPropertyWithDefault("validation.timeout.ms", "5000")));
+            thresholds.put("validation.memory.limit.mb", Integer.parseInt(getPropertyWithDefault("validation.memory.limit.mb", "100")));
+            thresholds.put("validation.file.size.limit.mb", Integer.parseInt(getPropertyWithDefault("validation.file.size.limit.mb", "50")));
+            thresholds.put("validation.batch.size", Integer.parseInt(getPropertyWithDefault("validation.batch.size", "1000")));
+            thresholds.put("validation.error.threshold", Integer.parseInt(getPropertyWithDefault("validation.error.threshold", "100")));
+            thresholds.put("validation.warning.threshold", Integer.parseInt(getPropertyWithDefault("validation.warning.threshold", "500")));
+            thresholds.put("cache.ttl.ms", Long.parseLong(getPropertyWithDefault("cache.ttl.ms", "300000")));
+            thresholds.put("cache.max.size", Integer.parseInt(getPropertyWithDefault("cache.max.size", "1000")));
+            thresholds.put("performance.response.time.ms", Integer.parseInt(getPropertyWithDefault("performance.response.time.ms", "2000")));
+            thresholds.put("performance.throughput.per.second", Integer.parseInt(getPropertyWithDefault("performance.throughput.per.second", "100")));
+        } catch (NumberFormatException e) {
+            // Return empty map if there are parsing errors
+            thresholds.clear();
+        }
+        return thresholds;
+    }
 }
 
 /**
@@ -968,7 +994,7 @@ enum ConfigurationSource {
  * Represents the result of configuration validation.
  * Contains validation status, errors, warnings, and validated properties.
  */
-class ValidationResult {
+class ConfigurationValidationResult {
     
     private final boolean valid;
     private final List<String> errors;
@@ -976,14 +1002,14 @@ class ValidationResult {
     private final Map<String, Object> validatedProperties;
     
     /**
-     * Creates a new ValidationResult.
+     * Creates a new ConfigurationValidationResult.
      * 
      * @param valid true if validation passed
      * @param errors list of validation errors
      * @param warnings list of validation warnings
      * @param validatedProperties map of validated configuration properties
      */
-    public ValidationResult(boolean valid, List<String> errors, List<String> warnings, 
+    public ConfigurationValidationResult(boolean valid, List<String> errors, List<String> warnings, 
                           Map<String, Object> validatedProperties) {
         this.valid = valid;
         this.errors = new ArrayList<>(errors != null ? errors : Collections.emptyList());
@@ -1047,7 +1073,7 @@ class ValidationResult {
     
     @Override
     public String toString() {
-        return String.format("ValidationResult{valid=%s, errors=%d, warnings=%d, properties=%d}", 
+        return String.format("ConfigurationValidationResult{valid=%s, errors=%d, warnings=%d, properties=%d}", 
                            valid, errors.size(), warnings.size(), validatedProperties.size());
     }
 }
