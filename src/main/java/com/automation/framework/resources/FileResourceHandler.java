@@ -1228,6 +1228,112 @@ public class FileResourceHandler {
             return "MONITOR_CONTINUED_USAGE";
         }
     }
+    
+    /**
+     * Validates that a file exists and is accessible.
+     * 
+     * @param filePath Path to the file to validate
+     * @return boolean indicating if file exists and is accessible
+     */
+    public boolean validateFileExists(Path filePath) {
+        try {
+            boolean exists = Files.exists(filePath);
+            if (exists) {
+                auditLogger.info("File validation successful: " + filePath.toString());
+            } else {
+                auditLogger.warn("File validation failed - file does not exist: " + filePath.toString());
+            }
+            return exists;
+        } catch (Exception e) {
+            auditLogger.error("Error validating file existence: " + filePath.toString() + " - " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Validates that a file is readable.
+     * 
+     * @param filePath Path to the file to validate
+     * @return boolean indicating if file is readable
+     */
+    public boolean validateFileReadable(Path filePath) {
+        try {
+            boolean readable = Files.isReadable(filePath);
+            if (readable) {
+                auditLogger.info("File readability validation successful: " + filePath.toString());
+            } else {
+                auditLogger.warn("File readability validation failed: " + filePath.toString());
+            }
+            return readable;
+        } catch (Exception e) {
+            auditLogger.error("Error validating file readability: " + filePath.toString() + " - " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Validates file format based on extension.
+     * 
+     * @param filePath Path to the file to validate
+     * @param expectedFormat Expected file format/extension
+     * @return boolean indicating if file format matches expected format
+     */
+    public boolean validateFileFormat(Path filePath, String expectedFormat) {
+        try {
+            String fileName = filePath.getFileName().toString().toLowerCase();
+            String actualFormat = fileName.substring(fileName.lastIndexOf('.') + 1);
+            boolean formatMatches = actualFormat.equals(expectedFormat.toLowerCase());
+            
+            if (formatMatches) {
+                auditLogger.info("File format validation successful: " + filePath.toString() + " (format: " + actualFormat + ")");
+            } else {
+                auditLogger.warn("File format validation failed: " + filePath.toString() + 
+                               " - expected: " + expectedFormat + ", actual: " + actualFormat);
+            }
+            return formatMatches;
+        } catch (Exception e) {
+            auditLogger.error("Error validating file format: " + filePath.toString() + " - " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Gets comprehensive metadata for a file.
+     * 
+     * @param filePath Path to the file
+     * @return Map containing file metadata
+     */
+    public Map<String, Object> getFileMetadata(Path filePath) {
+        Map<String, Object> metadata = new HashMap<>();
+        try {
+            if (Files.exists(filePath)) {
+                metadata.put("exists", true);
+                metadata.put("size", Files.size(filePath));
+                metadata.put("readable", Files.isReadable(filePath));
+                metadata.put("writable", Files.isWritable(filePath));
+                metadata.put("executable", Files.isExecutable(filePath));
+                metadata.put("lastModified", Files.getLastModifiedTime(filePath).toString());
+                metadata.put("isDirectory", Files.isDirectory(filePath));
+                metadata.put("isRegularFile", Files.isRegularFile(filePath));
+                metadata.put("absolutePath", filePath.toAbsolutePath().toString());
+                
+                // Add file extension
+                String fileName = filePath.getFileName().toString();
+                if (fileName.contains(".")) {
+                    metadata.put("extension", fileName.substring(fileName.lastIndexOf('.') + 1));
+                }
+                
+                auditLogger.info("File metadata retrieved: " + filePath.toString());
+            } else {
+                metadata.put("exists", false);
+                auditLogger.warn("File metadata request for non-existent file: " + filePath.toString());
+            }
+        } catch (Exception e) {
+            metadata.put("error", e.getMessage());
+            auditLogger.error("Error retrieving file metadata: " + filePath.toString() + " - " + e.getMessage());
+        }
+        return metadata;
+    }
 }
 
 /**
