@@ -125,7 +125,7 @@ public class SchemaValidator {
     
     // Schema caching with performance optimization
     private final ConcurrentHashMap<String, CachedSchema> schemaCache;
-    private final ConcurrentHashMap<String, ValidationResult> validationCache;
+    private final ConcurrentHashMap<String, SchemaValidationResult> validationCache;
     
     // Validation configuration and state management
     private volatile boolean strictModeEnabled = true;
@@ -189,9 +189,9 @@ public class SchemaValidator {
      * @param jsonPayload JSON payload to validate (as String or JsonNode)
      * @param schemaPath Path to JSON Schema definition file or schema content
      * @param schemaType Type of schema (JSON_SCHEMA, OPENAPI_SCHEMA, etc.)
-     * @return ValidationResult containing validation status, errors, and performance metrics
+     * @return SchemaValidationResult containing validation status, errors, and performance metrics
      */
-    public ValidationResult validateJsonPayload(Object jsonPayload, String schemaPath, SchemaType schemaType) {
+    public SchemaValidationResult validateJsonPayload(Object jsonPayload, String schemaPath, SchemaType schemaType) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -222,7 +222,7 @@ public class SchemaValidator {
             Set<ValidationMessage> validationMessages = schema.validate(jsonNode);
             
             // Process validation results
-            ValidationResult result = processJsonValidationResults(validationMessages, startTime);
+            SchemaValidationResult result = processJsonValidationResults(validationMessages, startTime);
             
             // Apply custom validation rules if configured
             if (!customRules.isEmpty()) {
@@ -262,9 +262,9 @@ public class SchemaValidator {
      * @param xmlPayload XML payload to validate as String
      * @param schemaPath Path to XSD schema definition file
      * @param schemaType Type of schema validation (XML_SCHEMA)
-     * @return ValidationResult containing validation status and detailed error information
+     * @return SchemaValidationResult containing validation status and detailed error information
      */
-    public ValidationResult validateXmlPayload(String xmlPayload, String schemaPath, SchemaType schemaType) {
+    public SchemaValidationResult validateXmlPayload(String xmlPayload, String schemaPath, SchemaType schemaType) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -300,7 +300,7 @@ public class SchemaValidator {
             }
             
             // Process validation results
-            ValidationResult result = processXmlValidationResults(errorHandler, startTime);
+            SchemaValidationResult result = processXmlValidationResults(errorHandler, startTime);
             
             // Use XmlPath for additional structure validation
             XmlPath xmlPath = XmlPath.from(xmlPayload);
@@ -338,9 +338,9 @@ public class SchemaValidator {
      * @param apiPayload API request or response payload to validate
      * @param schemaPath Path to OpenAPI/Swagger specification file
      * @param schemaType Type of API schema (OPENAPI_SCHEMA or SWAGGER_SCHEMA)
-     * @return ValidationResult containing API contract validation results
+     * @return SchemaValidationResult containing API contract validation results
      */
-    public ValidationResult validateOpenApiPayload(Object apiPayload, String schemaPath, SchemaType schemaType) {
+    public SchemaValidationResult validateOpenApiPayload(Object apiPayload, String schemaPath, SchemaType schemaType) {
         long startTime = System.currentTimeMillis();
         totalValidations++;
         
@@ -374,7 +374,7 @@ public class SchemaValidator {
             
             // Perform OpenAPI schema validation using JSON Schema validation
             // OpenAPI schemas are converted to JSON Schema for validation
-            ValidationResult result = validateAgainstOpenApiSchema(payloadNode, parseResult, startTime);
+            SchemaValidationResult result = validateAgainstOpenApiSchema(payloadNode, parseResult, startTime);
             
             // Cache validation result
             cacheValidationResult(generateCacheKey(apiPayload, schemaPath), result);
@@ -901,7 +901,7 @@ public class SchemaValidator {
     /**
      * Caches validation result.
      */
-    private void cacheValidationResult(String cacheKey, ValidationResult result) {
+    private void cacheValidationResult(String cacheKey, SchemaValidationResult result) {
         try {
             validationCache.put(cacheKey, result);
             
@@ -918,13 +918,13 @@ public class SchemaValidator {
     /**
      * Creates error validation result.
      */
-    private ValidationResult createErrorResult(String errorMessage, long startTime) {
+    private SchemaValidationResult createErrorResult(String errorMessage, long startTime) {
         long validationTime = System.currentTimeMillis() - startTime;
         
         List<String> errors = new ArrayList<>();
         errors.add(errorMessage);
         
-        return new ValidationResult(
+        return new SchemaValidationResult(
             false,
             errors,
             new ArrayList<>(), // warnings
@@ -938,7 +938,7 @@ public class SchemaValidator {
     /**
      * Processes JSON validation results.
      */
-    private ValidationResult processJsonValidationResults(Set<ValidationMessage> validationMessages, long startTime) {
+    private SchemaValidationResult processJsonValidationResults(Set<ValidationMessage> validationMessages, long startTime) {
         long validationTime = System.currentTimeMillis() - startTime;
         
         List<String> errors = new ArrayList<>();
@@ -958,7 +958,7 @@ public class SchemaValidator {
         boolean isValid = errors.isEmpty();
         String severity = errors.isEmpty() ? (warnings.isEmpty() ? "VALID" : "WARNING") : "ERROR";
         
-        return new ValidationResult(
+        return new SchemaValidationResult(
             isValid,
             errors,
             warnings,
@@ -972,7 +972,7 @@ public class SchemaValidator {
     /**
      * Processes XML validation results.
      */
-    private ValidationResult processXmlValidationResults(XmlValidationErrorHandler errorHandler, long startTime) {
+    private SchemaValidationResult processXmlValidationResults(XmlValidationErrorHandler errorHandler, long startTime) {
         long validationTime = System.currentTimeMillis() - startTime;
         
         List<String> errors = errorHandler.getErrors();
@@ -981,7 +981,7 @@ public class SchemaValidator {
         boolean isValid = errors.isEmpty();
         String severity = errors.isEmpty() ? (warnings.isEmpty() ? "VALID" : "WARNING") : "ERROR";
         
-        return new ValidationResult(
+        return new SchemaValidationResult(
             isValid,
             errors,
             warnings,
@@ -995,7 +995,7 @@ public class SchemaValidator {
     /**
      * Enhances XML validation with XmlPath analysis.
      */
-    private ValidationResult enhanceXmlValidationWithXmlPath(ValidationResult result, XmlPath xmlPath) {
+    private SchemaValidationResult enhanceXmlValidationWithXmlPath(SchemaValidationResult result, XmlPath xmlPath) {
         try {
             // Use XmlPath to perform additional validation
             List<String> nodeNames = xmlPath.getList("**.findAll { it.name() != null }*.name()");
@@ -1007,7 +1007,7 @@ public class SchemaValidator {
                 List<String> warnings = new ArrayList<>(result.getWarnings());
                 warnings.add("Empty XML nodes detected: " + String.join(", ", emptyNodes));
                 
-                return new ValidationResult(
+                return new SchemaValidationResult(
                     result.isValid(),
                     result.getErrors(),
                     warnings,
@@ -1028,10 +1028,10 @@ public class SchemaValidator {
     /**
      * Creates OpenAPI parse error result.
      */
-    private ValidationResult createOpenApiParseErrorResult(List<String> parseMessages, long startTime) {
+    private SchemaValidationResult createOpenApiParseErrorResult(List<String> parseMessages, long startTime) {
         long validationTime = System.currentTimeMillis() - startTime;
         
-        return new ValidationResult(
+        return new SchemaValidationResult(
             false,
             parseMessages,
             new ArrayList<>(),
@@ -1045,7 +1045,7 @@ public class SchemaValidator {
     /**
      * Validates against OpenAPI schema.
      */
-    private ValidationResult validateAgainstOpenApiSchema(JsonNode payloadNode, SwaggerParseResult parseResult, long startTime) {
+    private SchemaValidationResult validateAgainstOpenApiSchema(JsonNode payloadNode, SwaggerParseResult parseResult, long startTime) {
         // For OpenAPI validation, we would typically extract the relevant schema
         // from the OpenAPI spec and validate against it using JSON Schema validation
         // This is a simplified implementation
@@ -1059,7 +1059,7 @@ public class SchemaValidator {
             errors.add("OpenAPI specification is invalid");
         }
         
-        return new ValidationResult(
+        return new SchemaValidationResult(
             isValid,
             errors,
             new ArrayList<>(),
@@ -1073,7 +1073,7 @@ public class SchemaValidator {
     /**
      * Applies custom validation rules.
      */
-    private ValidationResult applyCustomValidationRules(ValidationResult baseResult, JsonNode jsonNode, SchemaType schemaType) {
+    private SchemaValidationResult applyCustomValidationRules(SchemaValidationResult baseResult, JsonNode jsonNode, SchemaType schemaType) {
         try {
             List<String> additionalErrors = new ArrayList<>(baseResult.getErrors());
             List<String> additionalWarnings = new ArrayList<>(baseResult.getWarnings());
@@ -1090,7 +1090,7 @@ public class SchemaValidator {
             
             boolean isValid = baseResult.isValid() && additionalErrors.size() == baseResult.getErrors().size();
             
-            return new ValidationResult(
+            return new SchemaValidationResult(
                 isValid,
                 additionalErrors,
                 additionalWarnings,
@@ -1146,312 +1146,7 @@ public class SchemaValidator {
     }
 }
 
-/**
- * ValidationResult encapsulates the results of schema validation operations.
- * 
- * This immutable result class provides comprehensive validation feedback including
- * success status, detailed error messages with JSON path locations, warning information,
- * severity classification, and performance timing data for monitoring and debugging.
- * 
- * Features:
- * - Immutable result object ensuring thread safety and data integrity
- * - Detailed error messages with JSON path locations for precise error identification
- * - Warning collection for non-critical validation issues in relaxed mode
- * - Severity classification (VALID, WARNING, ERROR, CRITICAL) for appropriate response handling
- * - Performance timing data for validation operation monitoring and optimization
- * - Builder pattern support for flexible result construction with optional parameters
- * 
- * @author Blitzy Framework
- * @version 1.0.0
- * @since 2024
- */
-public class ValidationResult {
-    
-    private final boolean valid;
-    private final List<String> errors;
-    private final List<String> warnings;
-    private final String jsonPath;
-    private final String errorMessage;
-    private final String severity;
-    private final long validationTime;
-    
-    /**
-     * Creates a new ValidationResult with comprehensive validation feedback.
-     * 
-     * @param valid Whether the validation passed successfully
-     * @param errors List of validation error messages
-     * @param warnings List of validation warning messages
-     * @param jsonPath JSON path location of the primary validation issue
-     * @param errorMessage Primary error message for the validation failure
-     * @param severity Severity level of the validation result (VALID, WARNING, ERROR, CRITICAL)
-     * @param validationTime Time taken for validation operation in milliseconds
-     */
-    public ValidationResult(boolean valid, List<String> errors, List<String> warnings,
-                          String jsonPath, String errorMessage, String severity, long validationTime) {
-        this.valid = valid;
-        this.errors = errors != null ? Collections.unmodifiableList(new ArrayList<>(errors)) : Collections.emptyList();
-        this.warnings = warnings != null ? Collections.unmodifiableList(new ArrayList<>(warnings)) : Collections.emptyList();
-        this.jsonPath = jsonPath != null ? jsonPath : "";
-        this.errorMessage = errorMessage != null ? errorMessage : "";
-        this.severity = severity != null ? severity : "UNKNOWN";
-        this.validationTime = validationTime;
-    }
-    
-    /**
-     * Checks if the validation was successful.
-     * 
-     * @return true if validation passed, false if validation failed
-     */
-    public boolean isValid() {
-        return valid;
-    }
-    
-    /**
-     * Gets the list of validation errors.
-     * 
-     * @return Immutable list of error messages
-     */
-    public List<String> getErrors() {
-        return errors;
-    }
-    
-    /**
-     * Gets the list of validation warnings.
-     * 
-     * @return Immutable list of warning messages
-     */
-    public List<String> getWarnings() {
-        return warnings;
-    }
-    
-    /**
-     * Gets the JSON path location of the primary validation issue.
-     * 
-     * @return JSON path string indicating location of validation issue
-     */
-    public String getJsonPath() {
-        return jsonPath;
-    }
-    
-    /**
-     * Gets the primary error message for validation failure.
-     * 
-     * @return Primary error message describing the validation failure
-     */
-    public String getErrorMessage() {
-        return errorMessage;
-    }
-    
-    /**
-     * Gets the severity level of the validation result.
-     * 
-     * @return Severity classification (VALID, WARNING, ERROR, CRITICAL)
-     */
-    public String getSeverity() {
-        return severity;
-    }
-    
-    /**
-     * Gets the time taken for the validation operation.
-     * 
-     * @return Validation time in milliseconds
-     */
-    public long getValidationTime() {
-        return validationTime;
-    }
-    
-    /**
-     * Checks if the result has any errors.
-     * 
-     * @return true if errors are present, false otherwise
-     */
-    public boolean hasErrors() {
-        return !errors.isEmpty();
-    }
-    
-    /**
-     * Checks if the result has any warnings.
-     * 
-     * @return true if warnings are present, false otherwise
-     */
-    public boolean hasWarnings() {
-        return !warnings.isEmpty();
-    }
-    
-    /**
-     * Gets the total count of issues (errors + warnings).
-     * 
-     * @return Total number of validation issues
-     */
-    public int getTotalIssueCount() {
-        return errors.size() + warnings.size();
-    }
-    
-    /**
-     * Creates a formatted summary of the validation result.
-     * 
-     * @return String summary of validation result with status and issue counts
-     */
-    public String getSummary() {
-        StringBuilder summary = new StringBuilder();
-        summary.append("Validation ").append(valid ? "PASSED" : "FAILED");
-        summary.append(" [").append(severity).append("]");
-        
-        if (!errors.isEmpty()) {
-            summary.append(" - ").append(errors.size()).append(" error(s)");
-        }
-        
-        if (!warnings.isEmpty()) {
-            summary.append(" - ").append(warnings.size()).append(" warning(s)");
-        }
-        
-        summary.append(" (").append(validationTime).append("ms)");
-        
-        return summary.toString();
-    }
-    
-    @Override
-    public String toString() {
-        return "ValidationResult{" +
-               "valid=" + valid +
-               ", errors=" + errors.size() +
-               ", warnings=" + warnings.size() +
-               ", severity='" + severity + '\'' +
-               ", validationTime=" + validationTime +
-               '}';
-    }
-}
 
-/**
- * SchemaType enumeration defines the supported types of schema validation.
- * 
- * This enum provides standardized classification of schema types to enable appropriate
- * validation strategies, parser selection, and processing approaches for different
- * types of schema validation operations within the automation framework.
- * 
- * Supported Schema Types:
- * - JSON_SCHEMA: JSON Schema validation using draft-07 or later specifications
- * - XML_SCHEMA: XML Schema (XSD) validation for SOAP and XML-based APIs  
- * - OPENAPI_SCHEMA: OpenAPI v3.x specification validation for REST API contracts
- * - SWAGGER_SCHEMA: Swagger v2.x specification validation for legacy API contracts
- * 
- * @author Blitzy Framework
- * @version 1.0.0
- * @since 2024
- */
-public enum SchemaType {
-    /**
-     * JSON Schema validation using draft-07 or later specifications.
-     * Supports nested object validation, array validation, and complex data type constraints.
-     */
-    JSON_SCHEMA,
-    
-    /**
-     * XML Schema (XSD) validation for SOAP and XML-based APIs.
-     * Supports complex XML structures, namespace validation, and schema imports.
-     */
-    XML_SCHEMA,
-    
-    /**
-     * OpenAPI v3.x specification validation for REST API contracts.
-     * Supports comprehensive API contract validation and endpoint-specific validation.
-     */
-    OPENAPI_SCHEMA,
-    
-    /**
-     * Swagger v2.x specification validation for legacy API contracts.
-     * Provides backward compatibility for older API specification formats.
-     */
-    SWAGGER_SCHEMA;
-    
-    /**
-     * Gets the file extensions commonly associated with this schema type.
-     * 
-     * @return Array of file extensions for this schema type
-     */
-    public String[] getFileExtensions() {
-        switch (this) {
-            case JSON_SCHEMA:
-                return new String[]{".json", ".jsonschema"};
-            case XML_SCHEMA:
-                return new String[]{".xsd", ".xml"};
-            case OPENAPI_SCHEMA:
-                return new String[]{".yaml", ".yml", ".json"};
-            case SWAGGER_SCHEMA:
-                return new String[]{".yaml", ".yml", ".json"};
-            default:
-                return new String[]{};
-        }
-    }
-    
-    /**
-     * Gets the MIME types associated with this schema type.
-     * 
-     * @return Array of MIME types for this schema type
-     */
-    public String[] getMimeTypes() {
-        switch (this) {
-            case JSON_SCHEMA:
-                return new String[]{"application/json", "application/schema+json"};
-            case XML_SCHEMA:
-                return new String[]{"application/xml", "text/xml"};
-            case OPENAPI_SCHEMA:
-            case SWAGGER_SCHEMA:
-                return new String[]{"application/yaml", "application/json"};
-            default:
-                return new String[]{};
-        }
-    }
-    
-    /**
-     * Determines schema type from file extension.
-     * 
-     * @param filename The filename to analyze
-     * @return SchemaType based on file extension, or null if not recognized
-     */
-    public static SchemaType fromFileExtension(String filename) {
-        if (filename == null) {
-            return null;
-        }
-        
-        String lowerFilename = filename.toLowerCase();
-        
-        if (lowerFilename.endsWith(".json") || lowerFilename.endsWith(".jsonschema")) {
-            return JSON_SCHEMA;
-        } else if (lowerFilename.endsWith(".xsd")) {
-            return XML_SCHEMA;
-        } else if (lowerFilename.endsWith(".yaml") || lowerFilename.endsWith(".yml")) {
-            // Default to OpenAPI for YAML files
-            return OPENAPI_SCHEMA;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Determines schema type from MIME type.
-     * 
-     * @param mimeType The MIME type to analyze
-     * @return SchemaType based on MIME type, or null if not recognized
-     */
-    public static SchemaType fromMimeType(String mimeType) {
-        if (mimeType == null) {
-            return null;
-        }
-        
-        String lowerMimeType = mimeType.toLowerCase();
-        
-        if (lowerMimeType.contains("json")) {
-            return JSON_SCHEMA;
-        } else if (lowerMimeType.contains("xml")) {
-            return XML_SCHEMA;
-        } else if (lowerMimeType.contains("yaml")) {
-            return OPENAPI_SCHEMA;
-        }
-        
-        return null;
-    }
-}
 
 /**
  * CachedSchema represents a cached schema with expiration and metadata.
