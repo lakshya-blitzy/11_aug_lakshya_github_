@@ -14,9 +14,9 @@
           preserve-order="true" 
           parallel="none">
         
-        <!-- No test classes defined - framework foundation validation only -->
+        <!-- Framework validation test class -->
         <classes>
-            <!-- Test classes will be added here as they are implemented -->
+            <class name="com.automation.framework.FrameworkValidationTest"/>
         </classes>
     </test>
 

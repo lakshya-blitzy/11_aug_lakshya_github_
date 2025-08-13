@@ -364,7 +364,7 @@ public class TestDataValidator {
             }
             
             // Validate method accessibility
-            if (!dataProviderMethod.isAccessible()) {
+            if (!dataProviderMethod.canAccess(null)) {
                 try {
                     dataProviderMethod.setAccessible(true);
                 } catch (SecurityException e) {
@@ -1376,7 +1376,7 @@ public class TestDataValidator {
         TestDataValidationResult.Builder resultBuilder = new TestDataValidationResult.Builder();
         
         try (Reader reader = Files.newBufferedReader(filePath)) {
-            CSVFormat csvFormat = CSVFormat.DEFAULT.withFirstRecordAsHeader();
+            CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).build();
             CSVParser parser = csvFormat.parse(reader);
             
             int recordCount = 0;
@@ -1674,7 +1674,7 @@ public class TestDataValidator {
             
             // Convert object to JSON string then to Map
             String jsonString = objectMapper.writeValueAsString(testData);
-            return objectMapper.readValue(jsonString, Map.class);
+            return objectMapper.readValue(jsonString, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
             
         } catch (Exception e) {
             logger.warn("Failed to convert test data to map: {}", e.getMessage());
