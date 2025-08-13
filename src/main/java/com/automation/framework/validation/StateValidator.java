@@ -361,7 +361,7 @@ public class StateValidator {
     public ValidationResult checkJavaScriptErrors(WebDriver driver) {
         return executeValidation(StateValidationType.JAVASCRIPT_ERRORS, () -> {
             try {
-                List<LogEntry> logs = driver.manage().logs().get(LogType.BROWSER);
+                List<LogEntry> logs = driver.manage().logs().get(LogType.BROWSER).getAll();
                 List<String> errors = logs.stream()
                     .filter(log -> log.getLevel().getName().equals("SEVERE"))
                     .map(LogEntry::getMessage)
