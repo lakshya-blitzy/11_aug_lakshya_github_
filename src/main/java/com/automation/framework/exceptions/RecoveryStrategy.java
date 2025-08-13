@@ -106,7 +106,7 @@ public class RecoveryStrategy {
         this.browserManager = BrowserManager.getInstance();
         this.apiClient = new APIClient();
         this.healthMonitor = HealthMonitor.getInstance();
-        this.retryMechanism = new RetryMechanism();
+        this.retryMechanism = RetryMechanism.getInstance();
         this.frameworkManager = FrameworkManager.getInstance();
         
         // Set correlation ID for recovery operations
@@ -156,11 +156,11 @@ public class RecoveryStrategy {
             }
             
             // Log decision with context
-            Map<String, Object> decisionContext = errorReporter.createErrorContext(
+            errorReporter.log(
                 com.automation.framework.exceptions.LogLevel.INFO,
-                "Recovery level determination",
-                error,
-                context
+                "Recovery level determination completed: " + level,
+                context,
+                error
             );
             
             return level;
@@ -191,8 +191,7 @@ public class RecoveryStrategy {
             }
             
             // Evaluate resource availability
-            var resourceHealth = resourceManager.getResourceHealth();
-            if (!resourceHealth.isHealthy()) {
+            if (!resourceManager.isResourceHealthy()) {
                 errorReporter.warn("Resource health check failed - limited recovery options");
             }
             
@@ -390,8 +389,8 @@ public class RecoveryStrategy {
             Map<String, Object> preservedState = new HashMap<>();
             
             // Preserve resource state
-            resourceManager.preserveResourceState();
-            preservedState.put("resourceState", resourceManager.getResourceHealth());
+            preservedState.put("resourceHealth", resourceManager.isResourceHealthy());
+            preservedState.put("resourceMetrics", resourceManager.getResourceMetrics());
             
             // Preserve framework state
             preservedState.put("frameworkStatus", getFrameworkState());
@@ -746,8 +745,9 @@ public class RecoveryStrategy {
     private boolean evaluateComponentRecoveryFeasibility(Map<String, Object> context) {
         // Check if browser manager can handle recovery
         try {
-            return browserManager.getSessionHealth("current").isHealthy() &&
-                   healthMonitor.getComponentHealth("BrowserManager").isHealthy();
+            boolean browserHealthy = !browserManager.getActiveSessions().isEmpty();
+            boolean frameworkHealthy = healthMonitor.isFrameworkHealthy();
+            return browserHealthy && frameworkHealthy;
         } catch (Exception e) {
             return false;
         }
@@ -755,8 +755,8 @@ public class RecoveryStrategy {
     
     private boolean evaluateTestRecoveryFeasibility(Map<String, Object> context) {
         // Check if test-level resources are available
-        return healthMonitor.getComponentHealth("TestExecutor").isHealthy() &&
-               resourceManager.getResourceHealth().isHealthy();
+        return healthMonitor.isFrameworkHealthy() &&
+               resourceManager.isResourceHealthy();
     }
     
     private boolean evaluateSuiteRecoveryFeasibility(Map<String, Object> context) {
@@ -804,22 +804,42 @@ public class RecoveryStrategy {
     }
     
     private long estimateRecoveryDuration(RecoveryLevel level, List<String> actions) {
-        long baseDuration = switch (level) {
-            case COMPONENT_LEVEL -> 5000; // 5 seconds
-            case TEST_LEVEL -> 15000; // 15 seconds
-            case SUITE_LEVEL -> 30000; // 30 seconds
-        };
+        long baseDuration;
+        switch (level) {
+            case COMPONENT_LEVEL:
+                baseDuration = 5000; // 5 seconds
+                break;
+            case TEST_LEVEL:
+                baseDuration = 15000; // 15 seconds
+                break;
+            case SUITE_LEVEL:
+                baseDuration = 30000; // 30 seconds
+                break;
+            default:
+                baseDuration = 10000; // Default fallback
+                break;
+        }
         
         return baseDuration + (actions.size() * 2000); // Add 2 seconds per action
     }
     
     private double calculateSuccessProbability(RecoveryLevel level, Map<String, Object> context) {
         // Base probability based on level
-        double baseProbability = switch (level) {
-            case COMPONENT_LEVEL -> 0.85; // 85%
-            case TEST_LEVEL -> 0.70; // 70%
-            case SUITE_LEVEL -> 0.95; // 95% (shutdown always succeeds)
-        };
+        double baseProbability;
+        switch (level) {
+            case COMPONENT_LEVEL:
+                baseProbability = 0.85; // 85%
+                break;
+            case TEST_LEVEL:
+                baseProbability = 0.70; // 70%
+                break;
+            case SUITE_LEVEL:
+                baseProbability = 0.95; // 95% (shutdown always succeeds)
+                break;
+            default:
+                baseProbability = 0.50; // Default fallback
+                break;
+        }
         
         // Adjust based on system health
         if (healthMonitor.isFrameworkHealthy()) {
@@ -853,11 +873,16 @@ public class RecoveryStrategy {
     }
     
     private String determineStatePreservationStrategy(RecoveryLevel level) {
-        return switch (level) {
-            case COMPONENT_LEVEL -> "session_state_snapshot";
-            case TEST_LEVEL -> "test_execution_context_preservation";
-            case SUITE_LEVEL -> "comprehensive_framework_state_preservation";
-        };
+        switch (level) {
+            case COMPONENT_LEVEL:
+                return "session_state_snapshot";
+            case TEST_LEVEL:
+                return "test_execution_context_preservation";
+            case SUITE_LEVEL:
+                return "comprehensive_framework_state_preservation";
+            default:
+                return "default_state_preservation";
+        }
     }
     
     private RecoveryPlan createEmergencyRecoveryPlan() {
@@ -881,10 +906,10 @@ public class RecoveryStrategy {
                     return browserManager.recoverBrowserSession("current").get();
                     
                 case "element_re_identification":
-                    return retryMechanism.executeWithRetry("element_identification", () -> true).isSuccess();
+                    return retryMechanism.executeWithRetry("element_identification", () -> true).isSuccessful();
                     
                 case "resource_reallocation":
-                    return resourceManager.reallocateResources();
+                    return resourceManager.forceResourceCleanup() && resourceManager.initializeResources();
                     
                 case "test_isolation":
                     return createBulkheadPattern("current_test", "thread_pool");
@@ -951,7 +976,7 @@ public class RecoveryStrategy {
                     return recoverAPIClient();
                     
                 case "resource":
-                    return resourceManager.reallocateResources();
+                    return resourceManager.forceResourceCleanup() && resourceManager.initializeResources();
                     
                 default:
                     errorReporter.warn("Unknown component for recovery: " + component);
@@ -975,7 +1000,7 @@ public class RecoveryStrategy {
     
     private boolean retryFailedRequest(String requestType, Map<String, Object> parameters) {
         // Simplified implementation - in reality would delegate to APIClient
-        return retryMechanism.executeWithRetry("api_request_" + requestType, () -> true).isSuccess();
+        return retryMechanism.executeWithRetry("api_request_" + requestType, () -> true).isSuccessful();
     }
     
     private Map<String, Object> preserveAPIState() {
