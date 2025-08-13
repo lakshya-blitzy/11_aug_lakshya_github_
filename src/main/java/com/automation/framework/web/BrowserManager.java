@@ -42,6 +42,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import java.util.Base64;
 
 /**
  * BrowserManager provides comprehensive browser session lifecycle management with automatic cleanup capabilities.
@@ -125,7 +126,7 @@ public class BrowserManager {
      */
     private BrowserManager() {
         // Initialize framework dependencies
-        this.webDriverPool = WebDriverPool.getInstance();
+        this.webDriverPool = new WebDriverPool();
         this.resourceManager = ResourceManager.getInstance();
         this.shutdownHandler = ShutdownHandler.getInstance();
         this.errorReporter = new ErrorReporter();
@@ -219,7 +220,7 @@ public class BrowserManager {
             browserTypeCounts,
             statusCounts,
             webDriverPool.getPoolUtilization(),
-            memoryManager.getCurrentMemoryUsage().getMemoryUtilization(),
+            getMemoryUtilizationPercentage(),
             Instant.now()
         );
     }
@@ -402,8 +403,8 @@ public class BrowserManager {
                 // Perform memory optimization
                 memoryManager.optimizeMemoryUsage();
                 
-                // Reallocate resources through ResourceManager
-                resourceManager.reallocateResources();
+                // Force resource cleanup and optimization through ResourceManager
+                resourceManager.forceResourceCleanup();
                 
                 logger.info("Reallocated resources for browser session: {}", sessionId);
                 return true;
@@ -484,10 +485,10 @@ public class BrowserManager {
         try {
             WebDriver driver = createWebDriver(browserType);
             
-            // Configure timeouts
-            driver.manage().timeouts().implicitlyWait(defaultDriverTimeout.toMillis(), TimeUnit.MILLISECONDS);
-            driver.manage().timeouts().pageLoadTimeout(defaultDriverTimeout.toMillis(), TimeUnit.MILLISECONDS);
-            driver.manage().timeouts().setScriptTimeout(defaultDriverTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            // Configure timeouts using Duration-based API
+            driver.manage().timeouts().implicitlyWait(defaultDriverTimeout);
+            driver.manage().timeouts().pageLoadTimeout(defaultDriverTimeout);
+            driver.manage().timeouts().scriptTimeout(defaultDriverTimeout);
             
             logger.debug("Initialized {} browser with default timeouts", browserType);
             return driver;
@@ -1076,6 +1077,21 @@ public class BrowserManager {
         }
         
         return context;
+    }
+    
+    /**
+     * Gets memory utilization percentage from MemoryManager.
+     */
+    private double getMemoryUtilizationPercentage() {
+        try {
+            // Access memory utilization through public API
+            return memoryManager.isMemoryHealthy() ? 
+                   (memoryManager.getTotalFrameworkMemoryUsage() / (double) Runtime.getRuntime().maxMemory()) * 100 :
+                   95.0; // Return high value if memory is unhealthy
+        } catch (Exception e) {
+            logger.debug("Failed to get memory utilization", e);
+            return 0.0;
+        }
     }
 }
 
