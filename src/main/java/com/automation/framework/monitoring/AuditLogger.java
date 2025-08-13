@@ -2,7 +2,6 @@ package com.automation.framework.monitoring;
 
 // Internal framework imports
 import com.automation.framework.core.FrameworkManager;
-import com.automation.framework.exceptions.ExceptionHandler;
 import com.automation.framework.core.ConfigurationManager;
 import com.automation.framework.monitoring.ResourceMonitor;
 
@@ -74,7 +73,6 @@ public class AuditLogger {
     
     // Framework component dependencies
     private final FrameworkManager frameworkManager;
-    private final ExceptionHandler exceptionHandler;
     private final ConfigurationManager configurationManager;
     private final ResourceMonitor resourceMonitor;
     
@@ -115,7 +113,6 @@ public class AuditLogger {
     private AuditLogger() {
         // Initialize framework component dependencies
         this.frameworkManager = FrameworkManager.getInstance();
-        this.exceptionHandler = ExceptionHandler.getInstance();
         this.configurationManager = ConfigurationManager.getInstance();
         this.resourceMonitor = ResourceMonitor.getInstance();
         
@@ -402,9 +399,10 @@ public class AuditLogger {
             }
             
             // Add framework context from FrameworkManager
-            lifecycleData.put("frameworkState", frameworkManager.getFrameworkState().toString());
-            lifecycleData.put("activeModules", frameworkManager.getActiveModules());
-            lifecycleData.put("totalExecutedTests", frameworkManager.getTotalExecutedTests());
+            lifecycleData.put("frameworkState", String.valueOf(frameworkManager.getStatus()));
+            lifecycleData.put("activeModules", frameworkManager.getRegisteredModuleIds());
+            // Use alternative access to metrics via getRegisteredModuleCount as a proxy for activity
+            lifecycleData.put("totalExecutedTests", frameworkManager.getRegisteredModuleCount());
             
             AuditEvent auditEvent = createAuditEvent("TEST_LIFECYCLE_EVENT", LogLevel.INFO,
                 "Test lifecycle event: " + lifecycleStage + " for test: " + testId, lifecycleData);
@@ -637,14 +635,9 @@ public class AuditLogger {
             
             // Add framework shutdown context
             try {
-                shutdownData.put("frameworkInitializationTime", frameworkManager.getInitializationTime());
-                shutdownData.put("finalFrameworkState", frameworkManager.getFrameworkState().toString());
-                shutdownData.put("totalTestsExecuted", frameworkManager.getTotalExecutedTests());
-                
-                // Add exception handling context
-                shutdownData.put("errorRates", exceptionHandler.getErrorRates());
-                shutdownData.put("exceptionCounts", exceptionHandler.getExceptionCounts());
-                shutdownData.put("recoveryAttempts", exceptionHandler.getRecoveryAttempts());
+                shutdownData.put("frameworkInitializationTime", frameworkManager.getLastInitializationDuration().toString());
+                shutdownData.put("finalFrameworkState", String.valueOf(frameworkManager.getStatus()));
+                shutdownData.put("totalTestsExecuted", frameworkManager.getRegisteredModuleCount());
                 
             } catch (Exception e) {
                 logger.debug("Could not retrieve framework shutdown context", e);
@@ -991,10 +984,10 @@ public class AuditLogger {
         
         try {
             // Add FrameworkManager context
-            context.put("frameworkState", frameworkManager.getFrameworkState().toString());
-            context.put("activeModules", frameworkManager.getActiveModules().size());
-            context.put("totalExecutedTests", frameworkManager.getTotalExecutedTests());
-            context.put("frameworkInitTime", frameworkManager.getInitializationTime().toString());
+            context.put("frameworkState", String.valueOf(frameworkManager.getStatus()));
+            context.put("activeModules", frameworkManager.getRegisteredModuleIds().size());
+            context.put("totalExecutedTests", frameworkManager.getRegisteredModuleCount());
+            context.put("frameworkInitTime", frameworkManager.getLastInitializationDuration().toString());
             
         } catch (Exception e) {
             logger.debug("Could not retrieve framework context", e);
