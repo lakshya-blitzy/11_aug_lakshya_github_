@@ -34,8 +34,12 @@ import org.slf4j.LoggerFactory;
 import com.automation.framework.exceptions.RetryMechanism;
 import com.automation.framework.exceptions.ExceptionHandler;
 import com.automation.framework.exceptions.ErrorReporter;
+import com.automation.framework.exceptions.RecoveryStrategy;
 import com.automation.framework.validation.StateValidator;
 import com.automation.framework.web.BrowserManager;
+import com.automation.framework.core.FrameworkManager;
+
+// Note: RetryConfiguration and RetryPolicy are package-private, so we use RetryMechanism methods directly
 
 /**
  * ElementInteractionHandler provides dynamic element handling with intelligent retry logic for web automation.
@@ -114,9 +118,10 @@ public class ElementInteractionHandler {
      */
     public ElementInteractionHandler() {
         // Initialize framework dependencies
-        this.retryMechanism = new RetryMechanism();
-        this.exceptionHandler = new ExceptionHandler();
+        this.retryMechanism = RetryMechanism.getInstance();
         this.errorReporter = new ErrorReporter();
+        this.exceptionHandler = new ExceptionHandler(this.errorReporter, new RecoveryStrategy(), 
+                                                    this.retryMechanism, FrameworkManager.getInstance());
         this.stateValidator = new StateValidator();
         this.browserManager = BrowserManager.getInstance();
         
@@ -349,23 +354,20 @@ public class ElementInteractionHandler {
             errorReporter.info("Starting element interaction retry: " + interactionType + " (ID: " + retryId + ")");
             
             // Configure retry mechanism with exponential backoff
-            retryMechanism.configureRetryPolicy(
-                configuration.getMaxRetryAttempts(),
-                configuration.getRetryDelay(),
-                true  // Enable exponential backoff
-            );
+            String operationName = "retry_" + interactionType;
+            retryMechanism.setMaxRetries(operationName, configuration.getMaxRetryAttempts());
             
             Object result = retryMechanism.executeWithRetry("retry_" + interactionType, operation);
             
             return InteractionResult.success(interactionType, locator, result, 
-                                           retryMechanism.getRetryCount(), Duration.between(Instant.now(), Instant.now()));
+                                           retryMechanism.getRetryCount("retry_" + interactionType), Duration.between(Instant.now(), Instant.now()));
             
         } catch (Exception e) {
             errorReporter.logException(e, "Element interaction retry failed: " + interactionType,
                                      createInteractionContext(retryId, interactionType, locator));
             
             return InteractionResult.failure(interactionType, locator, e, 
-                                           retryMechanism.getRetryCount(), Duration.between(Instant.now(), Instant.now()));
+                                           retryMechanism.getRetryCount("retry_" + interactionType), Duration.between(Instant.now(), Instant.now()));
         }
     }
     
@@ -811,7 +813,7 @@ public class ElementInteractionHandler {
             
             if (screenshotData == null) {
                 // Fallback: use ErrorReporter to capture screenshot
-                screenshotData = errorReporter.captureScreenshot(driver);
+                screenshotData = errorReporter.captureScreenshot();
             }
             
             logger.debug("Successfully captured screenshot for element: {}", locator);
@@ -998,12 +1000,8 @@ public class ElementInteractionHandler {
      * Configures the retry mechanism with default exponential backoff settings.
      */
     private void configureRetryPolicy() {
-        retryMechanism.configureRetryPolicy(
-            configuration.getMaxRetryAttempts(),
-            configuration.getRetryDelay(),
-            true  // Enable exponential backoff (1s, 2s, 4s)
-        );
-        retryMechanism.setMaxRetries(configuration.getMaxRetryAttempts());
+        String operationName = "default_element_interaction";
+        retryMechanism.setMaxRetries(operationName, configuration.getMaxRetryAttempts());
     }
     
     /**
@@ -1088,11 +1086,11 @@ public class ElementInteractionHandler {
         
         // Classify and handle the exception
         Map<String, Object> errorContext = createInteractionContext(interactionId, interactionType, locator);
-        exceptionHandler.handleException(exception, "Element interaction failed: " + interactionType, errorContext);
+        exceptionHandler.handleException(exception, errorContext);
         
         // Create failure result
         InteractionResult failureResult = InteractionResult.failure(
-            interactionType, locator, exception, retryMechanism.getRetryCount(), duration
+            interactionType, locator, exception, retryMechanism.getRetryCount("retry_" + interactionType), duration
         );
         
         // Store in history
