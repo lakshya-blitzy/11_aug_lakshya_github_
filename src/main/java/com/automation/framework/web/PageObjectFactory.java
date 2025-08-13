@@ -148,7 +148,7 @@ public class PageObjectFactory {
         this.exceptionHandler = new ExceptionHandler(
             new com.automation.framework.exceptions.ErrorReporter(),
             new com.automation.framework.exceptions.RecoveryStrategy(),
-            new com.automation.framework.exceptions.RetryMechanism(),
+            com.automation.framework.exceptions.RetryMechanism.getInstance(),
             com.automation.framework.core.FrameworkManager.getInstance()
         );
         
@@ -369,7 +369,7 @@ public class PageObjectFactory {
         try {
             // Get timeout from configuration
             int timeoutSeconds = Integer.parseInt(
-                configurationManager.getProperty("pageobject.element.timeout", "10")
+                configurationManager.getPropertyWithDefault("pageobject.element.timeout", "10")
             );
             
             // Use AjaxElementLocatorFactory for dynamic element handling
@@ -404,19 +404,22 @@ public class PageObjectFactory {
         
         try {
             // Validate page load completion
-            if (!stateValidator.validatePageLoadCompletion(driver)) {
+            if (!stateValidator.validatePageLoadCompletion(driver).isValid()) {
                 errors.add("Page load completion validation failed");
             }
             
             // Validate DOM stability
-            if (!stateValidator.validateDOMStability(driver)) {
+            if (!stateValidator.validateDOMStability(driver).isValid()) {
                 warnings.add("DOM stability validation indicates unstable state");
             }
             
             // Validate URL pattern if page object has URL annotation
             String expectedUrl = extractExpectedUrl(pageObject);
-            if (expectedUrl != null && !stateValidator.validateURLPattern(driver, expectedUrl)) {
-                errors.add("URL pattern validation failed for expected: " + expectedUrl);
+            if (expectedUrl != null) {
+                java.util.regex.Pattern urlPattern = java.util.regex.Pattern.compile(expectedUrl);
+                if (!stateValidator.validateURLPattern(driver, urlPattern).isValid()) {
+                    errors.add("URL pattern validation failed for expected: " + expectedUrl);
+                }
             }
             
             // Validate critical elements presence
@@ -493,23 +496,23 @@ public class PageObjectFactory {
     private void loadConfiguration() {
         try {
             // Load cache configuration
-            String cacheSize = configurationManager.getProperty("pageobject.cache.size", "50");
+            String cacheSize = configurationManager.getPropertyWithDefault("pageobject.cache.size", "50");
             this.maxCacheSize = Integer.parseInt(cacheSize);
             
             // Load validation configuration
-            String validationEnabledConfig = configurationManager.getProperty("pageobject.validation.enabled", "true");
+            String validationEnabledConfig = configurationManager.getPropertyWithDefault("pageobject.validation.enabled", "true");
             this.validationEnabled = Boolean.parseBoolean(validationEnabledConfig);
             
             // Load lazy initialization configuration
-            String lazyInitConfig = configurationManager.getProperty("pageobject.lazy.initialization", "true");
+            String lazyInitConfig = configurationManager.getPropertyWithDefault("pageobject.lazy.initialization", "true");
             this.lazyInitializationEnabled = Boolean.parseBoolean(lazyInitConfig);
             
             // Load async mode configuration
-            String asyncModeConfig = configurationManager.getProperty("pageobject.async.mode", "false");
+            String asyncModeConfig = configurationManager.getPropertyWithDefault("pageobject.async.mode", "false");
             this.asyncModeEnabled = Boolean.parseBoolean(asyncModeConfig);
             
             // Load cache expiration time
-            String expirationMinutes = configurationManager.getProperty("pageobject.cache.expiration.minutes", "30");
+            String expirationMinutes = configurationManager.getPropertyWithDefault("pageobject.cache.expiration.minutes", "30");
             this.cacheExpirationTime = Duration.ofMinutes(Integer.parseInt(expirationMinutes));
             
         } catch (Exception e) {
@@ -658,8 +661,11 @@ public class PageObjectFactory {
                 if (field.isAnnotationPresent(FindBy.class)) {
                     field.setAccessible(true);
                     try {
-                        WebElement element = (WebElement) field.get(pageObject);
-                        if (element != null && elementInteractionHandler.isElementInteractable(element)) {
+                        // Extract locator from @FindBy annotation
+                        FindBy findBy = field.getAnnotation(FindBy.class);
+                        org.openqa.selenium.By locator = createByFromFindBy(findBy);
+                        
+                        if (locator != null && elementInteractionHandler.isElementInteractable(driver, locator)) {
                             validatedElements.add(field.getName());
                         }
                     } catch (Exception e) {
@@ -673,6 +679,30 @@ public class PageObjectFactory {
         }
         
         return validatedElements;
+    }
+    
+    /**
+     * Creates a By locator from a FindBy annotation.
+     */
+    private org.openqa.selenium.By createByFromFindBy(FindBy findBy) {
+        if (!findBy.id().isEmpty()) {
+            return org.openqa.selenium.By.id(findBy.id());
+        } else if (!findBy.name().isEmpty()) {
+            return org.openqa.selenium.By.name(findBy.name());
+        } else if (!findBy.className().isEmpty()) {
+            return org.openqa.selenium.By.className(findBy.className());
+        } else if (!findBy.css().isEmpty()) {
+            return org.openqa.selenium.By.cssSelector(findBy.css());
+        } else if (!findBy.xpath().isEmpty()) {
+            return org.openqa.selenium.By.xpath(findBy.xpath());
+        } else if (!findBy.linkText().isEmpty()) {
+            return org.openqa.selenium.By.linkText(findBy.linkText());
+        } else if (!findBy.partialLinkText().isEmpty()) {
+            return org.openqa.selenium.By.partialLinkText(findBy.partialLinkText());
+        } else if (!findBy.tagName().isEmpty()) {
+            return org.openqa.selenium.By.tagName(findBy.tagName());
+        }
+        return null;
     }
     
     /**
