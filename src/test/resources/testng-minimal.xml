@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+
+<suite name="MinimalFrameworkSuite" 
+       verbose="1" 
+       parallel="none" 
+       thread-count="1">
+
+    <!-- Minimal test suite for framework validation -->
+    <!-- This configuration allows Maven test to succeed without errors -->
+    <!-- Actual test classes will be added as the framework develops -->
+    
+    <test name="FrameworkValidation" 
+          preserve-order="true" 
+          parallel="none">
+        
+        <!-- Framework validation test class -->
+        <classes>
+            <class name="com.automation.framework.FrameworkValidationTest"/>
+        </classes>
+    </test>
+
+</suite>
